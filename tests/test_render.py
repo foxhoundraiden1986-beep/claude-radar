@@ -134,6 +134,53 @@ class TestDeriveViews(unittest.TestCase):
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].age_seconds, 0)
 
+    def test_subagent_english_prompt_collapsed(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "You are a knowledge compiler. Your job is to read a daily log and...",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[sub-agent] knowledge compiler")
+
+    def test_subagent_chinese_prompt_collapsed(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "你是一个日记整理助手。阅读下面的工作日志原始记录，写一份摘要。",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[sub-agent] 日记整理助手")
+
+    def test_subagent_chinese_no_quantifier(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "你是数据分析师，请聚合下列指标。",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[sub-agent] 数据分析师")
+
+    def test_real_user_prompt_unchanged(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "[Image #5] 这里的说明不太对",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[Image #5] 这里的说明不太对")
+
+    def test_user_prompt_starting_with_you_are_not_collapsed(self) -> None:
+        # Real user prompt that *happens* to start with "you are" but lacks the
+        # role+punctuation structure should pass through unchanged.
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "you are kidding me",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "you are kidding me")
+
 
 class TestRenderCompact(unittest.TestCase):
     def setUp(self) -> None:

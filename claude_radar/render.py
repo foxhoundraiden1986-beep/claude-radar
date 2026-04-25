@@ -12,6 +12,7 @@ Everything here is pure: no I/O, no curses, no time.sleep. The TUI passes
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -67,6 +68,33 @@ def _now(now: Optional[datetime]) -> datetime:
     if now.tzinfo is None:
         return now.replace(tzinfo=timezone.utc)
     return now
+
+
+# Sub-agents (Task tool) and Skills are invoked with a long boilerplate prompt
+# of the form "You are a <role>. Your job is to ..." (English) or
+# "你是一个<角色>。" (Chinese). Claude Code fires UserPromptSubmit with that
+# whole prompt as the payload, so the hook records it verbatim. Showing it on
+# the board wastes width and misleads — the user sees prose that looks like
+# their own message but isn't. Collapse it to ``[sub-agent] <role>``.
+_SUBAGENT_PATTERNS = (
+    re.compile(r"^\s*you are\s+(?:a|an|the)\s+([^.,!\n]+?)[.,!\n]", re.IGNORECASE),
+    re.compile(r"^\s*你是(?:一个|一名|一位)?\s*([^。，！\n]+?)[。，！\n]"),
+)
+
+
+def _simplify_subagent_task(task: str) -> str:
+    """Collapse sub-agent / Skill boilerplate prompts to ``[sub-agent] <role>``.
+
+    Non-matching prompts (real user input) are returned unchanged.
+    """
+    if not task:
+        return task
+    for pat in _SUBAGENT_PATTERNS:
+        m = pat.match(task)
+        if m:
+            role = m.group(1).strip()
+            return f"[sub-agent] {role}" if role else "[sub-agent]"
+    return task
 
 
 def _display_width(s: str) -> int:
@@ -175,7 +203,7 @@ def derive_view(
     if raw_status not in _STATUS_RANK:
         raw_status = STATUS_IDLE
     sid = str(raw.get("session_id") or "?")
-    task = str(raw.get("current_task") or "")
+    task = _simplify_subagent_task(str(raw.get("current_task") or ""))
 
     started = _parse_iso(raw.get("status_changed_at"))
     age = 0 if started is None else max(0, int((now - started).total_seconds()))
