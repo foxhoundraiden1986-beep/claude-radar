@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-radar"
+version = "0.1.0"
+description = "Real-time dashboard for multiple Claude Code sessions."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "chengxuelin" },
+]
+keywords = ["claude", "claude-code", "tui", "dashboard", "tmux"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console :: Curses",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Utilities",
+]
+# Zero third-party runtime dependencies. curses is stdlib.
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[project.urls]
+Homepage = "https://github.com/chengxuelin/claude-radar"
+Issues = "https://github.com/chengxuelin/claude-radar/issues"
+
+[project.scripts]
+claude-radar = "claude_radar.cli:main"
+claude-radar-status = "claude_radar.cli:status_main"
+
+[tool.setuptools.packages.find]
+include = ["claude_radar*"]
+exclude = ["tests*"]
