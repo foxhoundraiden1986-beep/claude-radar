@@ -43,40 +43,54 @@ fi
 # Priority order:
 #   1. Explicit override via $CLAUDE_RADAR_SESSION_ID (escape hatch).
 #   2. Tmux session name (stable across pane reattaches).
-#   3. Our own controlling tty (only works when stdin is a tty — Claude Code
-#      pipes JSON in, so this rarely succeeds in practice).
-#   4. The controlling tty of our parent process — i.e. Claude Code itself,
-#      which **is** the session boundary we want. Stable across every hook
-#      invocation in the same Claude session.
+#   3. Our own controlling tty via `ps -o tty= -p $$`. Unlike `tty`, this
+#      reflects the *process's* controlling terminal, not stdin's, so it
+#      survives Claude Code piping JSON into our stdin.
+#   4. The controlling tty of our parent process — same value in practice
+#      (Claude Code is the parent; we inherit its tty), but worth a second
+#      look in case of a weird wrapper that breaks `ps`.
 #   5. Falling all the way through, group by parent PID. We deliberately do
 #      NOT use $$ here: $$ is the PID of the bash hook script and changes
 #      on every invocation, which would create a fresh state file per
-#      prompt and shatter the dashboard.
+#      prompt and shatter the dashboard. $PPID is Claude Code itself,
+#      which lives for the whole session.
 SESSION_ID=""
+
 if [ -n "${CLAUDE_RADAR_SESSION_ID:-}" ]; then
     SESSION_ID="$CLAUDE_RADAR_SESSION_ID"
 fi
+
 if [ -z "$SESSION_ID" ] && [ "${TMUX:-}" != "" ]; then
     SESSION_ID="$(tmux display-message -p '#S' 2>/dev/null || true)"
 fi
+
+# Helper: read the controlling tty of pid $1; print non-empty tty name or
+# nothing. Filters macOS/BSD's "?"/"??" sentinels for "no controlling tty".
+_radar_pid_tty() {
+    _t="$(ps -o tty= -p "$1" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$_t" ] && [ "$_t" != "?" ] && [ "$_t" != "??" ]; then
+        printf '%s' "$_t"
+    fi
+}
+
 if [ -z "$SESSION_ID" ]; then
-    TTY_NAME="$(tty 2>/dev/null || true)"
-    if [ -n "$TTY_NAME" ] && [ "$TTY_NAME" != "not a tty" ]; then
-        # /dev/ttys023 -> tty-ttys023
-        SESSION_ID="tty-$(printf '%s' "$TTY_NAME" | sed 's|^/dev/||')"
+    SELF_TTY="$(_radar_pid_tty "$$")"
+    if [ -n "$SELF_TTY" ]; then
+        SESSION_ID="tty-$SELF_TTY"
     fi
 fi
+
 if [ -z "$SESSION_ID" ] && [ -n "${PPID:-}" ]; then
-    # `ps -o tty=` prints the parent's controlling tty, e.g. ttys023; on
-    # macOS / BSD a missing tty shows up as '?' or '??' which we ignore.
-    PARENT_TTY="$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d '[:space:]' || true)"
-    if [ -n "$PARENT_TTY" ] && [ "$PARENT_TTY" != "?" ] && [ "$PARENT_TTY" != "??" ]; then
+    PARENT_TTY="$(_radar_pid_tty "$PPID")"
+    if [ -n "$PARENT_TTY" ]; then
         SESSION_ID="tty-$PARENT_TTY"
     fi
 fi
+
 if [ -z "$SESSION_ID" ]; then
-    # Last-resort stable id: the parent (Claude Code) PID lives as long as
-    # the session does, so all hooks of that session land in one file.
+    # Last-resort stable id: $PPID is Claude Code's PID, which lives as
+    # long as the session does, so all hooks of that session land in one
+    # file. Critically, NOT $$ — that is per-invocation.
     SESSION_ID="pid-${PPID:-0}"
 fi
 
