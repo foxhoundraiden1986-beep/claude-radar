@@ -101,13 +101,48 @@ def _draw(
     return views
 
 
-def _jump_to(view: "render.SessionView") -> str:
-    """Try to jump to ``view``'s tmux session. Return a footer status message.
+def _tmux_switch(target: str, *, client: Optional[str] = None) -> str:
+    """Run ``tmux switch-client`` and return a status message."""
+    args = ["tmux", "switch-client"]
+    if client:
+        args += ["-c", client]
+    args += ["-t", target]
+    try:
+        subprocess.run(args, check=True, capture_output=True, text=True, timeout=3)
+        if client:
+            return f" switched {client} → {target} "
+        return f" switched to {target} "
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or "").strip().splitlines()[-1:] or [""]
+        return f" tmux: {err[0]} "
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return " tmux switch-client failed "
 
-    Inside tmux: ``tmux switch-client -t <name>`` swaps the attached client.
-    Outside tmux: we cannot attach without taking over this TUI's terminal,
-    so we surface the exact command for the user to run elsewhere.
-    Non-tmux session ids (``tty-*`` / ``pid-*``): no actionable jump.
+
+def _list_tmux_clients() -> List[str]:
+    """Return names of currently attached tmux clients (e.g. ``/dev/ttys003``)."""
+    try:
+        r = subprocess.run(
+            ["tmux", "list-clients", "-F", "#{client_name}"],
+            check=True, capture_output=True, text=True, timeout=3,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+    return [line for line in r.stdout.splitlines() if line.strip()]
+
+
+def _jump_to(view: "render.SessionView") -> str:
+    """Jump the user to ``view``'s tmux session. Return a footer status message.
+
+    Three cases:
+    * Inside tmux (``$TMUX`` set): switch our own client.
+    * Outside tmux but another tmux client is attached (typical sidebar setup
+      — the dashboard runs in a standalone window while the user is in a
+      separate Terminal/iTerm window attached to tmux): pick the first
+      attached client and tell *it* to switch. The dashboard window stays put;
+      the other window jumps.
+    * Outside tmux with no client attached: surface ``tmux attach`` command.
+    Non-tmux session ids (``tty-*`` / ``pid-*``): nothing actionable.
     """
     if shutil.which("tmux") is None:
         return " tmux not on PATH — can't jump "
@@ -115,19 +150,13 @@ def _jump_to(view: "render.SessionView") -> str:
         return f" '{view.session_id}' is not a tmux session — can't jump "
     target = view.tmux_session
     if os.environ.get("TMUX"):
-        try:
-            subprocess.run(
-                ["tmux", "switch-client", "-t", target],
-                check=True, capture_output=True, text=True, timeout=3,
-            )
-            return f" switched to {target} "
-        except subprocess.CalledProcessError as e:
-            err = (e.stderr or "").strip().splitlines()[-1:] or [""]
-            return f" tmux: {err[0]} "
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return " tmux switch-client failed "
-    # Outside tmux: detaching this terminal would kill the TUI; just hint.
-    return f" not inside tmux — run: tmux attach -t {target} "
+        return _tmux_switch(target)
+    clients = _list_tmux_clients()
+    if not clients:
+        return f" no tmux client attached — run: tmux attach -t {target} "
+    # Prefer the first attached client. Most users have a single foreground
+    # tmux window — picking #0 is fine and predictable.
+    return _tmux_switch(target, client=clients[0])
 
 
 def _read_key(stdscr: "curses._CursesWindow", timeout_ms: int) -> int:
