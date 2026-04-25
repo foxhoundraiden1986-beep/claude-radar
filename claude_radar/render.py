@@ -12,7 +12,6 @@ Everything here is pure: no I/O, no curses, no time.sleep. The TUI passes
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,50 +75,11 @@ def _now(now: Optional[datetime]) -> datetime:
 # whole prompt as the payload, so the hook records it verbatim. Showing it on
 # the board wastes width and misleads — the user sees prose that looks like
 # their own message but isn't. Collapse it to ``[sub-agent] <role>``.
-_SUBAGENT_PATTERNS = (
-    # Role-defining (capture role as group 1 → shown as "[sub-agent] <role>")
-    re.compile(r"^\s*you are\s+(?:a|an|the)\s+([^.,!\n]+?)[.,!\n]", re.IGNORECASE),
-    re.compile(r"^\s*你是(?:一个|一名|一位)?\s*([^。，！\n]+?)[。，！\n]"),
-)
-_SUBAGENT_GENERIC_PATTERNS = (
-    # Imperative skill triggers — no role to capture, just collapse.
-    re.compile(
-        r"^\s*(?:review|summari[sz]e|analy[sz]e|compile|generate|extract|examine|"
-        r"please review|read the|process the)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"^\s*your\s+(?:task|job|role|goal)\s+is\b", re.IGNORECASE),
-    re.compile(r"^\s*you\s+(?:will|should|must|need to)\s+", re.IGNORECASE),
-)
-# Hook truncates task at 160 chars before writing state, so anything reaching
-# render that *still* matches an imperative pattern AND is at least this long
-# is almost certainly a stripped-down sub-agent prompt. Real user imperatives
-# ("Review the code", "Summarize this article") fall well under this.
-_IMPERATIVE_RENDER_MIN_LEN = 80
-
-
-def _simplify_subagent_task(task: str) -> str:
-    """Suppress sub-agent / Skill boilerplate prompts.
-
-    Returns an empty string when ``task`` looks like a sub-agent payload
-    (role-defining or long imperative). The board treats empty tasks as
-    ``-`` — the same placeholder shown for idle / no-activity sessions.
-    Real user input passes through unchanged.
-
-    Note: the hook layer normally filters these before they reach state, so
-    this function is the render-time safety net for any pattern the hook
-    misses or for state files written before the hook fix.
-    """
-    if not task:
-        return task
-    for pat in _SUBAGENT_PATTERNS:
-        if pat.match(task):
-            return ""
-    if len(task) >= _IMPERATIVE_RENDER_MIN_LEN:
-        for pat in _SUBAGENT_GENERIC_PATTERNS:
-            if pat.match(task):
-                return ""
-    return task
+# Sub-agent / Skill prompt suppression lives in the hook (state-tracker.sh).
+# The render layer now trusts whatever current_task is on disk and shows it
+# verbatim — if you see a sub-agent prompt leak through, the fix belongs in
+# the hook's filter, not here. State files written before the hook fix can
+# be cleaned with `claude-radar --reset`.
 
 
 def _display_width(s: str) -> int:
@@ -229,7 +189,7 @@ def derive_view(
     if raw_status not in _STATUS_RANK:
         raw_status = STATUS_IDLE
     sid = str(raw.get("session_id") or "?")
-    task = _simplify_subagent_task(str(raw.get("current_task") or ""))
+    task = str(raw.get("current_task") or "")
 
     started = _parse_iso(raw.get("status_changed_at"))
     age = 0 if started is None else max(0, int((now - started).total_seconds()))
@@ -375,7 +335,28 @@ def render_board(
     header = truncate_display(header, width)
     header = pad_display(header, width)
 
-    rows: List[str] = [header, ""]
+    # Column-header layout. Reuses the same emoji/name/task/age slot widths
+    # that the body rows use, so columns line up with their values.
+    emoji_slot = 3
+    age_slot = 6
+    gap = 2
+    avail = width - emoji_slot - age_slot - 2 * gap
+    if avail < 10:
+        avail = max(10, width - 6)
+    name_width = max(6, min(18, avail // 3))
+    task_width = max(6, avail - name_width)
+
+    col_header = (
+        " " * emoji_slot
+        + pad_display("session", name_width)
+        + " " * gap
+        + pad_display("task", task_width)
+        + " " * gap
+        + pad_display("age", age_slot)
+    )
+    col_header = pad_display(truncate_display(col_header, width), width)
+
+    rows: List[str] = [header, col_header, ""]
 
     if not views:
         empty_msg = "No active Claude Code sessions yet."
@@ -385,23 +366,19 @@ def render_board(
             pad_display(truncate_display("Hooks haven't fired yet — try sending a prompt.", width - 2), width)
         )
     else:
-        # Column widths: emoji(1 cell vis but 2 wide) + 2sp + name + 2sp + task + 2sp + age
-        # Reserve: emoji slot = 2 cells (emoji + 1 space pad). Spaces between cols = 2.
-        emoji_slot = 3
-        age_slot = 6
-        gap = 2
-        avail = width - emoji_slot - age_slot - 2 * gap
-        if avail < 10:
-            avail = max(10, width - 6)
-        name_width = max(6, min(18, avail // 3))
-        task_width = max(6, avail - name_width)
-
-        max_rows = height - 4  # 1 header + 1 blank + footer area (2 rows)
-        for v in views[:max_rows]:
-            line = _board_row(v, name_width, task_width)
-            rows.append(pad_display(truncate_display(line, width), width))
+        # 1 chrome + 1 col header + 1 blank + 1 footer = 4 fixed rows.
+        max_rows = max(1, height - 4)
         if len(views) > max_rows:
-            rows.append(pad_display(f"… +{len(views) - max_rows} more", width))
+            # Reserve the last body row for the "+N more" indicator.
+            body_cap = max_rows - 1
+            for v in views[:body_cap]:
+                line = _board_row(v, name_width, task_width)
+                rows.append(pad_display(truncate_display(line, width), width))
+            rows.append(pad_display(f"… +{len(views) - body_cap} more", width))
+        else:
+            for v in views:
+                line = _board_row(v, name_width, task_width)
+                rows.append(pad_display(truncate_display(line, width), width))
 
     # Pad to height-1 then append footer.
     while len(rows) < height - 1:

@@ -78,19 +78,23 @@ def _draw(
     rows = render.render_board(raw_states, width=width, height=height, now=now)
     views = render.derive_views(raw_states, now=now)
 
-    # First row: header (chrome).
+    # Row layout from render_board:
+    #   rows[0] = chrome header
+    #   rows[1] = column header
+    #   rows[2] = blank separator
+    #   rows[3..-2] = body
+    #   rows[-1] = footer
     _safe_addstr(stdscr, 0, 0, rows[0], _color_for(render.STATUS_IDLE))
-    # Body rows: each starts with an emoji whose color we want to match the status.
-    body_rows = rows[2 : -1]  # skip header + blank, exclude footer
+    _safe_addstr(stdscr, 1, 0, rows[1], curses.A_DIM if curses.has_colors() else 0)
+    _safe_addstr(stdscr, 2, 0, rows[2])
+    body_rows = rows[3 : -1]
     for i, row in enumerate(body_rows):
         attr = 0
         if i < len(views):
             attr = _color_for(views[i].status)
         if views and i == selected_index:
             attr |= curses.A_REVERSE
-        _safe_addstr(stdscr, 2 + i, 0, row, attr)
-    # Blank separator (already empty).
-    _safe_addstr(stdscr, 1, 0, rows[1])
+        _safe_addstr(stdscr, 3 + i, 0, row, attr)
     # Footer.
     footer_attr = curses.A_DIM if curses.has_colors() else 0
     _safe_addstr(stdscr, height - 1, 0, rows[-1], footer_attr)

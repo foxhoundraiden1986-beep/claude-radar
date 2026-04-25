@@ -134,80 +134,21 @@ class TestDeriveViews(unittest.TestCase):
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].age_seconds, 0)
 
-    def test_subagent_english_prompt_collapsed(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "You are a knowledge compiler. Your job is to read a daily log and...",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "")
-
-    def test_subagent_chinese_prompt_collapsed(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "你是一个日记整理助手。阅读下面的工作日志原始记录，写一份摘要。",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "")
-
-    def test_subagent_chinese_no_quantifier(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "你是数据分析师，请聚合下列指标。",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "")
-
-    def test_long_imperative_review_collapsed(self) -> None:
-        # Real sub-agent prompts are long boilerplate; only collapse when len
-        # crosses the render threshold.
-        long_review = (
-            "Review the conversation transcripts from today, extract key "
-            "decisions, group them by topic, and produce a summary in markdown."
-        )
-        states = [{"session_id": "x", "status": "working", "current_task": long_review}]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "")
-
-    def test_short_imperative_review_unchanged(self) -> None:
-        # User typing "Review the code" must NOT be collapsed.
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "Review the code I just pushed",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "Review the code I just pushed")
-
-    def test_short_summarize_unchanged(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "Summarize this article",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "Summarize this article")
-
-    def test_long_your_task_collapsed(self) -> None:
-        long_task = (
-            "Your task is to walk through every file in src/, identify ones "
-            "that import deprecated APIs, and emit a JSON list of fix targets."
-        )
-        states = [{"session_id": "x", "status": "working", "current_task": long_task}]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "")
-
-    def test_real_user_prompt_unchanged(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "[Image #5] 这里的说明不太对",
-        }]
-        view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[Image #5] 这里的说明不太对")
+    def test_task_shown_verbatim(self) -> None:
+        # Render trusts whatever the hook wrote; sub-agent suppression lives
+        # in the hook layer (state-tracker.sh), not here. Whatever shows up
+        # in current_task — user input, leaked sub-agent prompt, anything —
+        # is rendered as-is.
+        for text in [
+            "[Image #5] 这里的说明不太对",
+            "Review the code I just pushed",
+            "you are kidding me",
+            "You are a knowledge compiler. Your job is to do X.",
+            "你是一个日记整理助手。",
+        ]:
+            states = [{"session_id": "x", "status": "working", "current_task": text}]
+            view = render.derive_views(states, now=self.now)[0]
+            self.assertEqual(view.task, text)
 
     def test_tmux_session_propagated_to_view(self) -> None:
         states = [{
