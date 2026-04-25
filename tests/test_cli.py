@@ -51,9 +51,11 @@ class TestStatusCli(CliTestBase):
         self.assertIn("⚡1", out)
 
     def test_verbose_lists_tasks(self) -> None:
-        state.set_state(
-            "alpha", "working", task="long task here", timestamp="2026-04-25T10:00:00+00:00"
-        )
+        # Use a recent timestamp so the session doesn't get escalated to idle
+        # by render's stale-working threshold (DEFAULT_IDLE_AFTER_SECONDS).
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        state.set_state("alpha", "working", task="long task here", timestamp=now_iso)
         out = self._capture(cli.status_main, "--verbose").strip()
         self.assertIn("alpha:", out)
 

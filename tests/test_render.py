@@ -170,6 +170,20 @@ class TestDeriveViews(unittest.TestCase):
         view = render.derive_views(states, now=self.now)[0]
         self.assertEqual(view.task, "[Image #5] 这里的说明不太对")
 
+    def test_tmux_session_propagated_to_view(self) -> None:
+        states = [{
+            "session_id": "data",
+            "status": "waiting",
+            "tmux_session": "data",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.tmux_session, "data")
+
+    def test_tmux_session_none_when_missing(self) -> None:
+        states = [{"session_id": "pid-9999", "status": "waiting"}]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertIsNone(view.tmux_session)
+
     def test_user_prompt_starting_with_you_are_not_collapsed(self) -> None:
         # Real user prompt that *happens* to start with "you are" but lacks the
         # role+punctuation structure should pass through unchanged.

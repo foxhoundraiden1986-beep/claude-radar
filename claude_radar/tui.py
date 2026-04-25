@@ -10,15 +10,20 @@ Key bindings:
     q, Q, Esc      quit
     r, R           refresh immediately
     c, C           cleanup state files older than 24h
+    ↑/k, ↓/j       move selection
+    ⏎ / Enter      jump to selected tmux session (switch-client / attach hint)
 """
 
 from __future__ import annotations
 
 import curses
+import os
 import select
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from . import render, state
 
@@ -60,22 +65,29 @@ def _init_colors() -> None:
     curses.init_pair(3, curses.COLOR_WHITE, bg)    # idle / chrome
 
 
-def _draw(stdscr: "curses._CursesWindow", *, status_msg: str = "") -> None:
+def _draw(
+    stdscr: "curses._CursesWindow",
+    *,
+    status_msg: str = "",
+    selected_index: int = 0,
+) -> List["render.SessionView"]:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
     raw_states = state.list_states()
     now = datetime.now(timezone.utc).astimezone()
     rows = render.render_board(raw_states, width=width, height=height, now=now)
+    views = render.derive_views(raw_states, now=now)
 
     # First row: header (chrome).
     _safe_addstr(stdscr, 0, 0, rows[0], _color_for(render.STATUS_IDLE))
     # Body rows: each starts with an emoji whose color we want to match the status.
-    views = render.derive_views(raw_states, now=now)
     body_rows = rows[2 : -1]  # skip header + blank, exclude footer
     for i, row in enumerate(body_rows):
         attr = 0
         if i < len(views):
             attr = _color_for(views[i].status)
+        if views and i == selected_index:
+            attr |= curses.A_REVERSE
         _safe_addstr(stdscr, 2 + i, 0, row, attr)
     # Blank separator (already empty).
     _safe_addstr(stdscr, 1, 0, rows[1])
@@ -86,6 +98,36 @@ def _draw(stdscr: "curses._CursesWindow", *, status_msg: str = "") -> None:
         # Overlay status message on the footer line.
         _safe_addstr(stdscr, height - 1, 0, status_msg.ljust(width)[:width], curses.A_REVERSE)
     stdscr.refresh()
+    return views
+
+
+def _jump_to(view: "render.SessionView") -> str:
+    """Try to jump to ``view``'s tmux session. Return a footer status message.
+
+    Inside tmux: ``tmux switch-client -t <name>`` swaps the attached client.
+    Outside tmux: we cannot attach without taking over this TUI's terminal,
+    so we surface the exact command for the user to run elsewhere.
+    Non-tmux session ids (``tty-*`` / ``pid-*``): no actionable jump.
+    """
+    if shutil.which("tmux") is None:
+        return " tmux not on PATH — can't jump "
+    if not view.tmux_session:
+        return f" '{view.session_id}' is not a tmux session — can't jump "
+    target = view.tmux_session
+    if os.environ.get("TMUX"):
+        try:
+            subprocess.run(
+                ["tmux", "switch-client", "-t", target],
+                check=True, capture_output=True, text=True, timeout=3,
+            )
+            return f" switched to {target} "
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or "").strip().splitlines()[-1:] or [""]
+            return f" tmux: {err[0]} "
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return " tmux switch-client failed "
+    # Outside tmux: detaching this terminal would kill the TUI; just hint.
+    return f" not inside tmux — run: tmux attach -t {target} "
 
 
 def _read_key(stdscr: "curses._CursesWindow", timeout_ms: int) -> int:
@@ -100,13 +142,21 @@ def _read_key(stdscr: "curses._CursesWindow", timeout_ms: int) -> int:
 def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
     curses.curs_set(0)
     _init_colors()
+    stdscr.keypad(True)  # decode arrow keys to curses.KEY_UP / KEY_DOWN
     stdscr.nodelay(False)
 
     status_msg = ""
+    selected_index = 0
     timeout_ms = int(refresh_seconds * 1000)
     while True:
-        _draw(stdscr, status_msg=status_msg)
+        views = _draw(stdscr, status_msg=status_msg, selected_index=selected_index)
         status_msg = ""
+        # Clamp selection in case sessions appeared / disappeared since last tick.
+        n = len(views)
+        if n == 0:
+            selected_index = 0
+        else:
+            selected_index = max(0, min(selected_index, n - 1))
         ch = _read_key(stdscr, timeout_ms)
         if ch in (ord("q"), ord("Q"), KEY_ESC):
             return
@@ -115,6 +165,18 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
         if ch in (ord("c"), ord("C")):
             removed = state.cleanup_idle(max_age_seconds=24 * 3600)
             status_msg = f" cleaned up {removed} idle session(s) "
+            continue
+        if ch in (curses.KEY_UP, ord("k")):
+            if n:
+                selected_index = (selected_index - 1) % n
+            continue
+        if ch in (curses.KEY_DOWN, ord("j")):
+            if n:
+                selected_index = (selected_index + 1) % n
+            continue
+        if ch in (curses.KEY_ENTER, 10, 13):
+            if n:
+                status_msg = _jump_to(views[selected_index])
             continue
         if ch == curses.KEY_RESIZE:
             continue

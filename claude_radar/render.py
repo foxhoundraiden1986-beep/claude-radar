@@ -184,6 +184,7 @@ class SessionView:
     task: str
     age_seconds: int  # how long status has been at this value
     started_at: Optional[datetime]
+    tmux_session: Optional[str] = None  # for jump-to-session; None if non-tmux
 
 
 def derive_view(
@@ -211,6 +212,8 @@ def derive_view(
     status = raw_status
     if raw_status == STATUS_WORKING and age >= idle_after_seconds:
         status = STATUS_IDLE
+    tmux = raw.get("tmux_session")
+    tmux = str(tmux) if tmux else None
     return SessionView(
         session_id=sid,
         status=status,
@@ -218,6 +221,7 @@ def derive_view(
         task=task,
         age_seconds=age,
         started_at=started,
+        tmux_session=tmux,
     )
 
 
@@ -377,7 +381,7 @@ def render_board(
     # Pad to height-1 then append footer.
     while len(rows) < height - 1:
         rows.append(pad_display("", width))
-    footer = "q quit · r refresh · c cleanup"
+    footer = "q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump"
     rows.append(pad_display(truncate_display(footer, width), width))
 
     # Final clamp / truncation to exactly `height` rows.
