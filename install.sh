@@ -64,6 +64,8 @@ if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
     cp -R "$SCRIPT_DIR/hooks" "$INSTALL_DIR/"
     cp -R "$SCRIPT_DIR/claude_radar" "$INSTALL_DIR/"
     cp -R "$SCRIPT_DIR/install" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/install.sh"   "$INSTALL_DIR/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/uninstall.sh" "$INSTALL_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/LICENSE" "$INSTALL_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/README.zh-CN.md" "$INSTALL_DIR/" 2>/dev/null || true
@@ -71,7 +73,8 @@ if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
 fi
 
 chmod +x "$INSTALL_DIR/bin/claude-radar" "$INSTALL_DIR/bin/claude-radar-status" \
-         "$INSTALL_DIR/hooks/state-tracker.sh" 2>/dev/null || true
+         "$INSTALL_DIR/hooks/state-tracker.sh" \
+         "$INSTALL_DIR/install.sh" "$INSTALL_DIR/uninstall.sh" 2>/dev/null || true
 
 if [ "$NO_HOOKS" -eq 0 ]; then
     if [ -f "$SETTINGS_FILE" ]; then
