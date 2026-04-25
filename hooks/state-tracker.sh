@@ -122,16 +122,30 @@ if not isinstance(val, str):
     val = str(val)
 val = val.strip()
 # Skip sub-agent / Skill boilerplate. The main session's UserPromptSubmit
-# fires once with the user's real input AND once per Task / Skill invocation
-# with the sub-agent's "You are a <role>. ..." system prompt as payload.
-# Writing the latter would overwrite current_task and lose the user's real
-# task on the dashboard. Returning empty here makes hook skip --task, so
-# state.set preserves the previous current_task.
+# fires once with the user's real input AND once per Task / Skill / hook
+# invocation that pipes a system-style prompt back through the same hook.
+# Writing those would overwrite current_task and lose the user's real task
+# on the dashboard. Returning empty makes hook skip --task, so state.set
+# preserves the previous current_task.
 _SUBAGENT_RX = (
+    # Role-defining prompts ("You are a X." / "你是一个 X。")
     re.compile(r"^you are\s+(?:a|an|the)\s+[^.,!\n]+?[.,!\n]", re.IGNORECASE),
     re.compile(r"^你是(?:一个|一名|一位)?\s*[^。，！\n]+?[。，！\n]"),
+    # Imperative system-task prompts (Anthropic Skill hooks, daily-log
+    # compile, ECC summarisers, etc. all open with these.)
+    re.compile(
+        r"^(?:review|summari[sz]e|analy[sz]e|compile|generate|extract|examine|"
+        r"please review|read the|process the)\b",
+        re.IGNORECASE,
+    ),
+    # Frame-setting openers ("Your task is to ..." / "You will receive ...")
+    re.compile(r"^your\s+(?:task|job|role|goal)\s+is\b", re.IGNORECASE),
+    re.compile(r"^you\s+(?:will|should|must|need to)\s+", re.IGNORECASE),
 )
-if any(rx.match(val) for rx in _SUBAGENT_RX):
+# Length heuristic: real user messages rarely exceed ~1000 chars; sub-agent
+# system prompts routinely run several thousand. Anything above 1500 is
+# almost certainly not a typed-by-hand user message.
+if len(val) > 1500 or any(rx.match(val) for rx in _SUBAGENT_RX):
     sys.exit(0)
 # Trim to a sensible length for the dashboard.
 print(val[:160])

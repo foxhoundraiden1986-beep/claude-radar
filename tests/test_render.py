@@ -161,6 +161,24 @@ class TestDeriveViews(unittest.TestCase):
         view = render.derive_views(states, now=self.now)[0]
         self.assertEqual(view.task, "[sub-agent] 数据分析师")
 
+    def test_imperative_review_collapsed(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "Review the conversation transcripts and produce a summary.",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[sub-agent]")
+
+    def test_your_task_is_collapsed(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "Your task is to refactor the module.",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "[sub-agent]")
+
     def test_real_user_prompt_unchanged(self) -> None:
         states = [{
             "session_id": "x",

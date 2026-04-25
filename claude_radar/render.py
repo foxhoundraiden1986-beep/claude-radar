@@ -77,15 +77,28 @@ def _now(now: Optional[datetime]) -> datetime:
 # the board wastes width and misleads — the user sees prose that looks like
 # their own message but isn't. Collapse it to ``[sub-agent] <role>``.
 _SUBAGENT_PATTERNS = (
+    # Role-defining (capture role as group 1 → shown as "[sub-agent] <role>")
     re.compile(r"^\s*you are\s+(?:a|an|the)\s+([^.,!\n]+?)[.,!\n]", re.IGNORECASE),
     re.compile(r"^\s*你是(?:一个|一名|一位)?\s*([^。，！\n]+?)[。，！\n]"),
+)
+_SUBAGENT_GENERIC_PATTERNS = (
+    # Imperative skill triggers — no role to capture, just collapse.
+    re.compile(
+        r"^\s*(?:review|summari[sz]e|analy[sz]e|compile|generate|extract|examine|"
+        r"please review|read the|process the)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*your\s+(?:task|job|role|goal)\s+is\b", re.IGNORECASE),
+    re.compile(r"^\s*you\s+(?:will|should|must|need to)\s+", re.IGNORECASE),
 )
 
 
 def _simplify_subagent_task(task: str) -> str:
-    """Collapse sub-agent / Skill boilerplate prompts to ``[sub-agent] <role>``.
+    """Collapse sub-agent / Skill boilerplate prompts.
 
-    Non-matching prompts (real user input) are returned unchanged.
+    * Role-defining ("You are a X.") → ``[sub-agent] <role>``
+    * Imperative system tasks ("Review the conversation...") → ``[sub-agent]``
+    * Real user input → unchanged.
     """
     if not task:
         return task
@@ -94,6 +107,9 @@ def _simplify_subagent_task(task: str) -> str:
         if m:
             role = m.group(1).strip()
             return f"[sub-agent] {role}" if role else "[sub-agent]"
+    for pat in _SUBAGENT_GENERIC_PATTERNS:
+        if pat.match(task):
+            return "[sub-agent]"
     return task
 
 
