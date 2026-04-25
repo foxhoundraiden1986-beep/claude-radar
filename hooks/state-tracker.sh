@@ -40,8 +40,23 @@ if [ ! -t 0 ]; then
 fi
 
 # --- session id derivation -------------------------------------------------
+# Priority order:
+#   1. Explicit override via $CLAUDE_RADAR_SESSION_ID (escape hatch).
+#   2. Tmux session name (stable across pane reattaches).
+#   3. Our own controlling tty (only works when stdin is a tty — Claude Code
+#      pipes JSON in, so this rarely succeeds in practice).
+#   4. The controlling tty of our parent process — i.e. Claude Code itself,
+#      which **is** the session boundary we want. Stable across every hook
+#      invocation in the same Claude session.
+#   5. Falling all the way through, group by parent PID. We deliberately do
+#      NOT use $$ here: $$ is the PID of the bash hook script and changes
+#      on every invocation, which would create a fresh state file per
+#      prompt and shatter the dashboard.
 SESSION_ID=""
-if [ "${TMUX:-}" != "" ]; then
+if [ -n "${CLAUDE_RADAR_SESSION_ID:-}" ]; then
+    SESSION_ID="$CLAUDE_RADAR_SESSION_ID"
+fi
+if [ -z "$SESSION_ID" ] && [ "${TMUX:-}" != "" ]; then
     SESSION_ID="$(tmux display-message -p '#S' 2>/dev/null || true)"
 fi
 if [ -z "$SESSION_ID" ]; then
@@ -51,8 +66,18 @@ if [ -z "$SESSION_ID" ]; then
         SESSION_ID="tty-$(printf '%s' "$TTY_NAME" | sed 's|^/dev/||')"
     fi
 fi
+if [ -z "$SESSION_ID" ] && [ -n "${PPID:-}" ]; then
+    # `ps -o tty=` prints the parent's controlling tty, e.g. ttys023; on
+    # macOS / BSD a missing tty shows up as '?' or '??' which we ignore.
+    PARENT_TTY="$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$PARENT_TTY" ] && [ "$PARENT_TTY" != "?" ] && [ "$PARENT_TTY" != "??" ]; then
+        SESSION_ID="tty-$PARENT_TTY"
+    fi
+fi
 if [ -z "$SESSION_ID" ]; then
-    SESSION_ID="unknown-$$"
+    # Last-resort stable id: the parent (Claude Code) PID lives as long as
+    # the session does, so all hooks of that session land in one file.
+    SESSION_ID="pid-${PPID:-0}"
 fi
 
 TMUX_SESSION="${SESSION_ID}"
