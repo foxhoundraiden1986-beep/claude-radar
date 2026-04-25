@@ -127,25 +127,34 @@ val = val.strip()
 # Writing those would overwrite current_task and lose the user's real task
 # on the dashboard. Returning empty makes hook skip --task, so state.set
 # preserves the previous current_task.
-_SUBAGENT_RX = (
-    # Role-defining prompts ("You are a X." / "你是一个 X。")
+# Role-defining prompts are unambiguous — sub-agent always opens with
+# "You are a <role>." Short or long, this is never the user typing.
+_ROLE_RX = (
     re.compile(r"^you are\s+(?:a|an|the)\s+[^.,!\n]+?[.,!\n]", re.IGNORECASE),
     re.compile(r"^你是(?:一个|一名|一位)?\s*[^。，！\n]+?[。，！\n]"),
-    # Imperative system-task prompts (Anthropic Skill hooks, daily-log
-    # compile, ECC summarisers, etc. all open with these.)
+)
+# Imperative openers ("Review the X", "Your task is to ...") collide with
+# real user messages ("Review the code", "Summarize this article"). Only
+# treat them as sub-agent when the prompt is long enough to be boilerplate.
+# Real user imperatives are typically < 100 chars; sub-agent system tasks
+# usually run hundreds.
+_IMPERATIVE_RX = (
     re.compile(
         r"^(?:review|summari[sz]e|analy[sz]e|compile|generate|extract|examine|"
         r"please review|read the|process the)\b",
         re.IGNORECASE,
     ),
-    # Frame-setting openers ("Your task is to ..." / "You will receive ...")
     re.compile(r"^your\s+(?:task|job|role|goal)\s+is\b", re.IGNORECASE),
     re.compile(r"^you\s+(?:will|should|must|need to)\s+", re.IGNORECASE),
 )
-# Length heuristic: real user messages rarely exceed ~1000 chars; sub-agent
-# system prompts routinely run several thousand. Anything above 1500 is
-# almost certainly not a typed-by-hand user message.
-if len(val) > 1500 or any(rx.match(val) for rx in _SUBAGENT_RX):
+_IMPERATIVE_MIN_LEN = 200
+_HARD_LENGTH_LIMIT = 1500
+
+if any(rx.match(val) for rx in _ROLE_RX):
+    sys.exit(0)
+if len(val) > _HARD_LENGTH_LIMIT:
+    sys.exit(0)
+if len(val) >= _IMPERATIVE_MIN_LEN and any(rx.match(val) for rx in _IMPERATIVE_RX):
     sys.exit(0)
 # Trim to a sensible length for the dashboard.
 print(val[:160])

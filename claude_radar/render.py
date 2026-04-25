@@ -91,14 +91,20 @@ _SUBAGENT_GENERIC_PATTERNS = (
     re.compile(r"^\s*your\s+(?:task|job|role|goal)\s+is\b", re.IGNORECASE),
     re.compile(r"^\s*you\s+(?:will|should|must|need to)\s+", re.IGNORECASE),
 )
+# Hook truncates task at 160 chars before writing state, so anything reaching
+# render that *still* matches an imperative pattern AND is at least this long
+# is almost certainly a stripped-down sub-agent prompt. Real user imperatives
+# ("Review the code", "Summarize this article") fall well under this.
+_IMPERATIVE_RENDER_MIN_LEN = 80
 
 
 def _simplify_subagent_task(task: str) -> str:
     """Collapse sub-agent / Skill boilerplate prompts.
 
     * Role-defining ("You are a X.") → ``[sub-agent] <role>``
-    * Imperative system tasks ("Review the conversation...") → ``[sub-agent]``
-    * Real user input → unchanged.
+    * Long imperative system tasks ("Review the conversation transcripts and
+      produce a summary...") → ``[sub-agent]``
+    * Real user input ("Review the code") → unchanged.
     """
     if not task:
         return task
@@ -107,9 +113,10 @@ def _simplify_subagent_task(task: str) -> str:
         if m:
             role = m.group(1).strip()
             return f"[sub-agent] {role}" if role else "[sub-agent]"
-    for pat in _SUBAGENT_GENERIC_PATTERNS:
-        if pat.match(task):
-            return "[sub-agent]"
+    if len(task) >= _IMPERATIVE_RENDER_MIN_LEN:
+        for pat in _SUBAGENT_GENERIC_PATTERNS:
+            if pat.match(task):
+                return "[sub-agent]"
     return task
 
 

@@ -161,21 +161,42 @@ class TestDeriveViews(unittest.TestCase):
         view = render.derive_views(states, now=self.now)[0]
         self.assertEqual(view.task, "[sub-agent] 数据分析师")
 
-    def test_imperative_review_collapsed(self) -> None:
-        states = [{
-            "session_id": "x",
-            "status": "working",
-            "current_task": "Review the conversation transcripts and produce a summary.",
-        }]
+    def test_long_imperative_review_collapsed(self) -> None:
+        # Real sub-agent prompts are long boilerplate; only collapse when len
+        # crosses the render threshold.
+        long_review = (
+            "Review the conversation transcripts from today, extract key "
+            "decisions, group them by topic, and produce a summary in markdown."
+        )
+        states = [{"session_id": "x", "status": "working", "current_task": long_review}]
         view = render.derive_views(states, now=self.now)[0]
         self.assertEqual(view.task, "[sub-agent]")
 
-    def test_your_task_is_collapsed(self) -> None:
+    def test_short_imperative_review_unchanged(self) -> None:
+        # User typing "Review the code" must NOT be collapsed.
         states = [{
             "session_id": "x",
             "status": "working",
-            "current_task": "Your task is to refactor the module.",
+            "current_task": "Review the code I just pushed",
         }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "Review the code I just pushed")
+
+    def test_short_summarize_unchanged(self) -> None:
+        states = [{
+            "session_id": "x",
+            "status": "working",
+            "current_task": "Summarize this article",
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.task, "Summarize this article")
+
+    def test_long_your_task_collapsed(self) -> None:
+        long_task = (
+            "Your task is to walk through every file in src/, identify ones "
+            "that import deprecated APIs, and emit a JSON list of fix targets."
+        )
+        states = [{"session_id": "x", "status": "working", "current_task": long_task}]
         view = render.derive_views(states, now=self.now)[0]
         self.assertEqual(view.task, "[sub-agent]")
 
