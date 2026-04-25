@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Console entry point for the curses dashboard.
+
+Lives under ``bin/`` so that ``$INSTALL_DIR/bin`` can be put on PATH without
+installing the Python package. Adds the repo root to ``sys.path`` so the
+``claude_radar`` package is importable in-place.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from claude_radar import cli  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(cli.main())

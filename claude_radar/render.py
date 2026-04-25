@@ -259,8 +259,18 @@ def render_compact(
 # ---------- board (multi-line, for TUI) ------------------------------------
 
 
+def _emoji_cell(status: str, slot_width: int = 2) -> str:
+    """Return the status emoji padded so every row's first column is aligned.
+
+    Wide emojis (``💬``, ``⚡``) already take ``slot_width`` cells; narrow
+    fallbacks (``○``) get right-padded with spaces so rows still line up.
+    """
+    e = EMOJI.get(status, "?")
+    return pad_display(e, slot_width)
+
+
 def _board_row(view: SessionView, name_width: int, task_width: int) -> str:
-    emoji = EMOJI.get(view.status, "?")
+    emoji = _emoji_cell(view.status)
     name = pad_display(truncate_display(view.session_id, name_width), name_width)
     if view.status == STATUS_IDLE:
         task = pad_display("-", task_width)
@@ -295,13 +305,16 @@ def render_board(
     now = _now(now)
     views = derive_views(raw_states, now=now, idle_after_seconds=idle_after_seconds)
 
-    # Header: "─ <title> ─ HH:MM ─"
+    # Header: "─ <title> ─...─ HH:MM ─" sized to exactly ``width`` cells.
+    #   leading "─" (1) + inner (N) + dashes (D) + " " (1) + clock (C) +
+    #   " " (1) + trailing "─" (1) = width
+    # → D = width - N - C - 4
     clock = now.strftime("%H:%M")
     header_inner = f" {title} "
-    # Build header that fits exactly `width` cells:
-    pad = width - _display_width(header_inner) - _display_width(clock) - 2
-    pad = max(2, pad)
-    header = f"─{header_inner}{'─' * (pad - 1)} {clock} ─"
+    inner_w = _display_width(header_inner)
+    clock_w = _display_width(clock)
+    dashes = max(1, width - inner_w - clock_w - 4)
+    header = f"─{header_inner}{'─' * dashes} {clock} ─"
     header = truncate_display(header, width)
     header = pad_display(header, width)
 
