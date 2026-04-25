@@ -75,26 +75,26 @@ def _draw(
     height, width = stdscr.getmaxyx()
     raw_states = state.list_states()
     now = datetime.now(timezone.utc).astimezone()
-    rows = render.render_board(raw_states, width=width, height=height, now=now)
+    layout = render.render_board_layout(
+        raw_states, width=width, height=height, now=now
+    )
+    rows = layout.rows
     views = render.derive_views(raw_states, now=now)
 
-    # Row layout from render_board:
-    #   rows[0] = chrome header
-    #   rows[1] = column header
-    #   rows[2] = blank separator
-    #   rows[3..-2] = body
-    #   rows[-1] = footer
+    # rows[0]=chrome, rows[1]=column header, rows[2]=blank, body, footer.
     _safe_addstr(stdscr, 0, 0, rows[0], _color_for(render.STATUS_IDLE))
     _safe_addstr(stdscr, 1, 0, rows[1], curses.A_DIM if curses.has_colors() else 0)
     _safe_addstr(stdscr, 2, 0, rows[2])
-    body_rows = rows[3 : -1]
+    body_start = layout.body_start
+    body_rows = rows[body_start : -1]
     for i, row in enumerate(body_rows):
+        owner = layout.body_owners[i] if i < len(layout.body_owners) else None
         attr = 0
-        if i < len(views):
-            attr = _color_for(views[i].status)
-        if views and i == selected_index:
-            attr |= curses.A_REVERSE
-        _safe_addstr(stdscr, 3 + i, 0, row, attr)
+        if owner is not None and owner < len(views):
+            attr = _color_for(views[owner].status)
+            if owner == selected_index:
+                attr |= curses.A_REVERSE
+        _safe_addstr(stdscr, body_start + i, 0, row, attr)
     # Footer.
     footer_attr = curses.A_DIM if curses.has_colors() else 0
     _safe_addstr(stdscr, height - 1, 0, rows[-1], footer_attr)

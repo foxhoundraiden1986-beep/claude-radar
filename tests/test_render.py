@@ -134,6 +134,37 @@ class TestDeriveViews(unittest.TestCase):
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].age_seconds, 0)
 
+    def test_long_task_wraps_across_multiple_rows(self) -> None:
+        # A task longer than the task column should wrap onto continuation
+        # rows owned by the same view.
+        long_task = "abcdefghij" * 20  # 200 chars, ascii-only
+        states = [_state("dev", "working", task=long_task, minutes_ago=1, now=self.now)]
+        layout = render.render_board_layout(states, width=60, height=24, now=self.now)
+        # body_owners should contain the same index repeated for each wrapped row
+        owners = [o for o in layout.body_owners if o == 0]
+        self.assertGreater(len(owners), 1, "long task should produce >1 body row for view 0")
+
+    def test_cjk_task_wraps_safely(self) -> None:
+        cjk = "线下新客归因分析" * 6  # ~96 cells, will wrap
+        states = [_state("data", "working", task=cjk, minutes_ago=1, now=self.now)]
+        layout = render.render_board_layout(states, width=60, height=24, now=self.now)
+        owners_for_view0 = [o for o in layout.body_owners if o == 0]
+        self.assertGreater(len(owners_for_view0), 1)
+
+    def test_short_task_single_row(self) -> None:
+        states = [_state("a", "waiting", task="short", minutes_ago=1, now=self.now)]
+        layout = render.render_board_layout(states, width=80, height=24, now=self.now)
+        self.assertEqual(layout.body_owners.count(0), 1)
+
+    def test_view_line_count_matches_layout(self) -> None:
+        long_task = "x" * 100
+        states = [_state("v", "working", task=long_task, minutes_ago=1, now=self.now)]
+        views = render.derive_views(states, now=self.now)
+        _, task_w = render.board_column_widths(60)
+        n = render.view_line_count(views[0], task_w)
+        layout = render.render_board_layout(states, width=60, height=24, now=self.now)
+        self.assertEqual(layout.body_owners.count(0), n)
+
     def test_task_shown_verbatim(self) -> None:
         # Render trusts whatever the hook wrote; sub-agent suppression lives
         # in the hook layer (state-tracker.sh), not here. Whatever shows up

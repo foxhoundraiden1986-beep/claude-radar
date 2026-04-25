@@ -286,22 +286,99 @@ def _emoji_cell(status: str, slot_width: int = 2) -> str:
     return pad_display(e, slot_width)
 
 
-def _board_row(view: SessionView, name_width: int, task_width: int) -> str:
+def _wrap_to_width(text: str, width: int) -> List[str]:
+    """Break text into chunks each at most ``width`` display cells (CJK-safe).
+
+    Mirrors the per-character width logic of ``_display_width``: combining
+    marks count as 0, East-Asian wide / fullwidth / ambiguous as 2, the rest
+    as 1. Returns at least one element (the empty string for empty input)
+    so callers can always treat it as a non-empty list.
+    """
+    if width <= 0 or not text:
+        return [""]
+    out: List[str] = []
+    cur = ""
+    cur_w = 0
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if cat.startswith("M"):
+            cw = 0
+        elif unicodedata.east_asian_width(ch) in ("W", "F", "A"):
+            cw = 2
+        else:
+            cw = 1
+        if cur_w + cw > width:
+            out.append(cur)
+            cur = ch
+            cur_w = cw
+        else:
+            cur += ch
+            cur_w += cw
+    if cur:
+        out.append(cur)
+    return out or [""]
+
+
+def board_column_widths(width: int) -> Tuple[int, int]:
+    """Return (name_width, task_width) for a given total board width.
+
+    Public helper so the TUI can compute the same wrapping as render_board
+    when working out which body rows belong to a given view.
+    """
+    emoji_slot = 3
+    age_slot = 6
+    gap = 2
+    avail = max(10, width) - emoji_slot - age_slot - 2 * gap
+    if avail < 10:
+        avail = max(10, width - 6)
+    name_width = max(6, min(18, avail // 3))
+    task_width = max(6, avail - name_width)
+    return name_width, task_width
+
+
+def view_line_count(view: SessionView, task_width: int) -> int:
+    """How many body rows ``view`` will occupy at the given ``task_width``."""
+    if view.status == STATUS_IDLE:
+        return 1
+    text = (view.task or "").strip() or "-"
+    return max(1, len(_wrap_to_width(text, task_width)))
+
+
+def _board_view_lines(view: SessionView, name_width: int, task_width: int) -> List[str]:
+    """Render ``view`` as a list of body rows; long tasks wrap onto extras."""
     emoji = _emoji_cell(view.status)
     name = pad_display(truncate_display(view.session_id, name_width), name_width)
     if view.status == STATUS_IDLE:
-        task = pad_display("-", task_width)
+        chunks = ["-"]
         age = ""
     else:
-        task = pad_display(
-            truncate_display(view.task.strip() or "-", task_width), task_width
-        )
+        text = (view.task or "").strip() or "-"
+        chunks = _wrap_to_width(text, task_width)
         age = format_duration(view.age_seconds)
-    line = f"{emoji}  {name}  {task}  {age}".rstrip()
-    return line
+    blank_emoji = pad_display("", 2)
+    blank_name = pad_display("", name_width)
+    blank_age = pad_display("", 6)
+    lines: List[str] = []
+    for i, chunk in enumerate(chunks):
+        task_cell = pad_display(chunk, task_width)
+        if i == 0:
+            line = f"{emoji}  {name}  {task_cell}  {age}".rstrip()
+        else:
+            line = f"{blank_emoji}  {blank_name}  {task_cell}  {blank_age}".rstrip()
+        lines.append(line)
+    return lines
 
 
-def render_board(
+@dataclass
+class BoardLayout:
+    """Full board output plus metadata the TUI needs for selection."""
+
+    rows: List[str]
+    body_start: int  # row index in ``rows`` where the body begins
+    body_owners: List[Optional[int]]  # for each body row, which view index
+
+
+def render_board_layout(
     raw_states: Sequence[Dict[str, Any]],
     *,
     width: int,
@@ -309,12 +386,10 @@ def render_board(
     now: Optional[datetime] = None,
     idle_after_seconds: int = DEFAULT_IDLE_AFTER_SECONDS,
     title: str = "Claude Sessions",
-) -> List[str]:
-    """Return a list of strings (one per row) sized for a curses window.
+) -> BoardLayout:
+    """Render the board and return rows + body→view mapping.
 
-    The output is exactly ``height`` rows tall (padded with empty strings)
-    and every row's display width is at most ``width``. The caller is
-    responsible for actually drawing them.
+    See :func:`render_board` for the simpler wrapper that drops the metadata.
     """
     width = max(20, int(width))
     height = max(3, int(height))
@@ -335,19 +410,15 @@ def render_board(
     header = truncate_display(header, width)
     header = pad_display(header, width)
 
-    # Column-header layout. Reuses the same emoji/name/task/age slot widths
-    # that the body rows use, so columns line up with their values.
-    emoji_slot = 3
-    age_slot = 6
+    # Column-header layout. Body rows have an emoji slot (2 cells) + 2-space
+    # gap (= 4 cells of left margin); the header uses 4 spaces to line up.
+    name_width, task_width = board_column_widths(width)
+    emoji_slot = 2
     gap = 2
-    avail = width - emoji_slot - age_slot - 2 * gap
-    if avail < 10:
-        avail = max(10, width - 6)
-    name_width = max(6, min(18, avail // 3))
-    task_width = max(6, avail - name_width)
+    age_slot = 6
 
     col_header = (
-        " " * emoji_slot
+        " " * (emoji_slot + gap)
         + pad_display("session", name_width)
         + " " * gap
         + pad_display("task", task_width)
@@ -357,6 +428,10 @@ def render_board(
     col_header = pad_display(truncate_display(col_header, width), width)
 
     rows: List[str] = [header, col_header, ""]
+    # Maps each body row index (0-based within body) to its view index, or
+    # None for the "+N more" trailer. The TUI uses this for selection
+    # highlighting that spans wrapped task lines.
+    body_owners: List[Optional[int]] = []
 
     if not views:
         empty_msg = "No active Claude Code sessions yet."
@@ -365,20 +440,29 @@ def render_board(
         rows.append(
             pad_display(truncate_display("Hooks haven't fired yet — try sending a prompt.", width - 2), width)
         )
+        body_owners.extend([None, None, None])
     else:
         # 1 chrome + 1 col header + 1 blank + 1 footer = 4 fixed rows.
-        max_rows = max(1, height - 4)
-        if len(views) > max_rows:
-            # Reserve the last body row for the "+N more" indicator.
-            body_cap = max_rows - 1
-            for v in views[:body_cap]:
-                line = _board_row(v, name_width, task_width)
-                rows.append(pad_display(truncate_display(line, width), width))
-            rows.append(pad_display(f"… +{len(views) - body_cap} more", width))
-        else:
-            for v in views:
-                line = _board_row(v, name_width, task_width)
-                rows.append(pad_display(truncate_display(line, width), width))
+        max_body = max(1, height - 4)
+        body_buf: List[str] = []
+        owners_buf: List[Optional[int]] = []
+        truncated_at = -1
+        for i, v in enumerate(views):
+            v_lines = _board_view_lines(v, name_width, task_width)
+            # Reserve 1 row for the "+N more" trailer if we'll truncate.
+            cap = max_body - 1 if i < len(views) - 1 else max_body
+            if len(body_buf) + len(v_lines) > cap:
+                truncated_at = i
+                break
+            for ln in v_lines:
+                body_buf.append(pad_display(truncate_display(ln, width), width))
+                owners_buf.append(i)
+        if truncated_at >= 0:
+            remaining = len(views) - truncated_at
+            body_buf.append(pad_display(f"… +{remaining} more", width))
+            owners_buf.append(None)
+        rows.extend(body_buf)
+        body_owners.extend(owners_buf)
 
     # Pad to height-1 then append footer.
     while len(rows) < height - 1:
@@ -389,7 +473,27 @@ def render_board(
     # Final clamp / truncation to exactly `height` rows.
     if len(rows) > height:
         rows = rows[:height - 1] + [rows[-1]]
-    return rows
+    return BoardLayout(rows=rows, body_start=3, body_owners=body_owners)
+
+
+def render_board(
+    raw_states: Sequence[Dict[str, Any]],
+    *,
+    width: int,
+    height: int,
+    now: Optional[datetime] = None,
+    idle_after_seconds: int = DEFAULT_IDLE_AFTER_SECONDS,
+    title: str = "Claude Sessions",
+) -> List[str]:
+    """Return board rows sized to the given window. See :func:`render_board_layout`."""
+    return render_board_layout(
+        raw_states,
+        width=width,
+        height=height,
+        now=now,
+        idle_after_seconds=idle_after_seconds,
+        title=title,
+    ).rows
 
 
 # ---------- public exports -------------------------------------------------
