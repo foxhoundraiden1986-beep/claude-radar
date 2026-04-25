@@ -129,6 +129,35 @@ window; we display `○` so the dashboard does not drown in stale entries.
 `waiting` is **not** escalated — once Claude has signalled it's done and
 you have not replied, the dashboard's whole job is to keep flagging that.
 
+## State file invariants
+
+Each state file under `~/.claude-radar/state/` carries a handful of
+timestamps. Two of them — `last_user_prompt_at` and
+`last_assistant_stop_at` — follow a "last write wins" rule: every time
+the corresponding hook fires we **overwrite** the previous value, never
+prepend or accumulate.
+
+This is a load-bearing invariant, not a coincidence:
+
+- `render.derive_view` uses `status_changed_at` (a sibling of the two
+  fields above and bumped under the same rule) to compute "how long has
+  this status been the case?" — that calculation is meaningless unless
+  the timestamp reflects the *current* status entry, not the first one
+  ever recorded.
+- The compact `--verbose` line and the dashboard's `13m` / `41m` columns
+  both read these timestamps directly. A first-wins rule would freeze
+  the duration at "minutes since the very first prompt of this session";
+  a history array would force every reader to do extra work to find the
+  most recent entry.
+
+If a future iteration of the state machine wants to keep prompt history
+(e.g. to render "this session has been going back-and-forth for 2h"),
+add a **new** field for it. Do not repurpose the existing fields, and do
+not change the overwrite semantics. `task_started_at` is the one
+exception — it is sticky across `working ↔ working` transitions so a
+long task isn't constantly reset; the rule is documented inline in
+`state.set_state`.
+
 ## Session ID derivation
 
 Hook scripts have two reliable identifiers available:
