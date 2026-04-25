@@ -34,15 +34,22 @@ EMOJI = {
 # Status sort order: waiting first (most actionable), then working, then idle.
 _STATUS_RANK = {STATUS_WAITING: 0, STATUS_WORKING: 1, STATUS_IDLE: 2}
 
-# A working session whose status_changed_at is older than this is escalated
-# to ``idle`` at render time — the hook never fired ``Stop`` and the task is
-# almost certainly stale (Claude crashed, user closed the terminal, etc.).
-# Long-running but still active tasks (compiles, big analyses) routinely run
-# tens of minutes; the threshold here is intentionally generous so the
-# dashboard does not lie about an actually-running task. The user story in
-# the spec shows a 41-minute ``working`` session that should still render
-# as working.
-DEFAULT_IDLE_AFTER_SECONDS = 6 * 3600
+# Two idle thresholds — by status, not by a single number.
+#
+# WORKING: a working session sitting on the same status for hours is almost
+# certainly stale (Claude crashed, terminal closed). Threshold is generous
+# because long-running compiles and analyses routinely run tens of minutes
+# and we don't want to lie about an actually-active task.
+#
+# WAITING: the session has already pinged the user. After a short while of
+# no response it stops being a "look at me" alert and becomes background
+# noise — keeping it red forever clutters the board. Older waiting sessions
+# fade to idle so the user only sees fresh asks at full intensity.
+DEFAULT_WORKING_IDLE_AFTER_SECONDS = 6 * 3600    # 6 h
+DEFAULT_WAITING_IDLE_AFTER_SECONDS = 30 * 60     # 30 min
+# Backwards-compat alias for callers that pass a single ``idle_after_seconds``.
+# When supplied, it overrides the working threshold (the historical contract).
+DEFAULT_IDLE_AFTER_SECONDS = DEFAULT_WORKING_IDLE_AFTER_SECONDS
 
 
 # ---------- helpers --------------------------------------------------------
@@ -196,6 +203,8 @@ def derive_view(
 
     status = raw_status
     if raw_status == STATUS_WORKING and age >= idle_after_seconds:
+        status = STATUS_IDLE
+    elif raw_status == STATUS_WAITING and age >= DEFAULT_WAITING_IDLE_AFTER_SECONDS:
         status = STATUS_IDLE
     tmux = raw.get("tmux_session")
     tmux = str(tmux) if tmux else None

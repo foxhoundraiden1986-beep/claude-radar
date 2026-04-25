@@ -117,12 +117,19 @@ class TestDeriveViews(unittest.TestCase):
         self.assertEqual(views[0].status, render.STATUS_IDLE)
         self.assertEqual(views[0].raw_status, render.STATUS_WORKING)
 
-    def test_waiting_does_not_escalate(self) -> None:
-        states = [
-            _state("hung", "waiting", minutes_ago=240, now=self.now),
-        ]
-        views = render.derive_views(states, now=self.now, idle_after_seconds=30 * 60)
+    def test_fresh_waiting_does_not_escalate(self) -> None:
+        # Newly-waiting sessions are the loudest signal — must stay flagged.
+        states = [_state("recent", "waiting", minutes_ago=5, now=self.now)]
+        views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].status, render.STATUS_WAITING)
+
+    def test_old_waiting_escalates_to_idle(self) -> None:
+        # Long-untouched waiting sessions fade to idle so the board doesn't
+        # stay solid red on stale asks.
+        states = [_state("forgotten", "waiting", minutes_ago=240, now=self.now)]
+        views = render.derive_views(states, now=self.now)
+        self.assertEqual(views[0].status, render.STATUS_IDLE)
+        self.assertEqual(views[0].raw_status, render.STATUS_WAITING)
 
     def test_unknown_status_treated_as_idle(self) -> None:
         states = [{"session_id": "weird", "status": "kaboom", "status_changed_at": None}]
