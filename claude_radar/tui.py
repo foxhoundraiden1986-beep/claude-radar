@@ -131,17 +131,49 @@ def _list_tmux_clients() -> List[str]:
     return [line for line in r.stdout.splitlines() if line.strip()]
 
 
+def _spawn_attach_macos(target: str) -> Optional[str]:
+    """On macOS, open a new Terminal/iTerm window running ``tmux attach -t``.
+
+    Returns a status message on success, ``None`` if osascript is unavailable
+    or fails (caller should fall back to a hint).
+    """
+    if sys.platform != "darwin" or shutil.which("osascript") is None:
+        return None
+    cmd = f"tmux attach -t {target}"
+    if os.environ.get("TERM_PROGRAM") == "iTerm.app":
+        script = (
+            f'tell application "iTerm"\n'
+            f'  create window with default profile command "{cmd}"\n'
+            f'end tell'
+        )
+    else:
+        script = (
+            f'tell application "Terminal"\n'
+            f'  activate\n'
+            f'  do script "{cmd}"\n'
+            f'end tell'
+        )
+    try:
+        subprocess.run(
+            ["osascript", "-e", script],
+            check=True, capture_output=True, text=True, timeout=5,
+        )
+        return f" opened new window → {target} "
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
 def _jump_to(view: "render.SessionView") -> str:
     """Jump the user to ``view``'s tmux session. Return a footer status message.
 
-    Three cases:
+    Resolution order:
     * Inside tmux (``$TMUX`` set): switch our own client.
-    * Outside tmux but another tmux client is attached (typical sidebar setup
-      — the dashboard runs in a standalone window while the user is in a
-      separate Terminal/iTerm window attached to tmux): pick the first
-      attached client and tell *it* to switch. The dashboard window stays put;
-      the other window jumps.
-    * Outside tmux with no client attached: surface ``tmux attach`` command.
+    * Outside tmux but another tmux client is attached (typical sidebar
+      setup): pick the first attached client and tell *it* to switch. The
+      dashboard window stays put; the other window jumps.
+    * Outside tmux with no client attached, on macOS: open a new
+      Terminal/iTerm window running ``tmux attach -t <target>``.
+    * Otherwise: surface the ``tmux attach`` command for the user.
     Non-tmux session ids (``tty-*`` / ``pid-*``): nothing actionable.
     """
     if shutil.which("tmux") is None:
@@ -152,11 +184,14 @@ def _jump_to(view: "render.SessionView") -> str:
     if os.environ.get("TMUX"):
         return _tmux_switch(target)
     clients = _list_tmux_clients()
-    if not clients:
-        return f" no tmux client attached — run: tmux attach -t {target} "
-    # Prefer the first attached client. Most users have a single foreground
-    # tmux window — picking #0 is fine and predictable.
-    return _tmux_switch(target, client=clients[0])
+    if clients:
+        # Prefer the first attached client. Most users have a single foreground
+        # tmux window — picking #0 is fine and predictable.
+        return _tmux_switch(target, client=clients[0])
+    spawned = _spawn_attach_macos(target)
+    if spawned is not None:
+        return spawned
+    return f" no tmux client attached — run: tmux attach -t {target} "
 
 
 def _read_key(stdscr: "curses._CursesWindow", timeout_ms: int) -> int:
