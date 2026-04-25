@@ -109,7 +109,7 @@ extract_field() {
         return 0
     fi
     "$PYTHON_BIN" - "$key" <<'PY' "$1" 2>/dev/null || true
-import json, sys
+import json, re, sys
 key = sys.argv[1]
 try:
     data = json.loads(sys.argv[2])
@@ -120,8 +120,21 @@ if val is None:
     sys.exit(0)
 if not isinstance(val, str):
     val = str(val)
+val = val.strip()
+# Skip sub-agent / Skill boilerplate. The main session's UserPromptSubmit
+# fires once with the user's real input AND once per Task / Skill invocation
+# with the sub-agent's "You are a <role>. ..." system prompt as payload.
+# Writing the latter would overwrite current_task and lose the user's real
+# task on the dashboard. Returning empty here makes hook skip --task, so
+# state.set preserves the previous current_task.
+_SUBAGENT_RX = (
+    re.compile(r"^you are\s+(?:a|an|the)\s+[^.,!\n]+?[.,!\n]", re.IGNORECASE),
+    re.compile(r"^你是(?:一个|一名|一位)?\s*[^。，！\n]+?[。，！\n]"),
+)
+if any(rx.match(val) for rx in _SUBAGENT_RX):
+    sys.exit(0)
 # Trim to a sensible length for the dashboard.
-print(val.strip()[:160])
+print(val[:160])
 PY
 }
 
