@@ -141,7 +141,7 @@ class TestDeriveViews(unittest.TestCase):
             "current_task": "You are a knowledge compiler. Your job is to read a daily log and...",
         }]
         view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[sub-agent] knowledge compiler")
+        self.assertEqual(view.task, "")
 
     def test_subagent_chinese_prompt_collapsed(self) -> None:
         states = [{
@@ -150,7 +150,7 @@ class TestDeriveViews(unittest.TestCase):
             "current_task": "你是一个日记整理助手。阅读下面的工作日志原始记录，写一份摘要。",
         }]
         view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[sub-agent] 日记整理助手")
+        self.assertEqual(view.task, "")
 
     def test_subagent_chinese_no_quantifier(self) -> None:
         states = [{
@@ -159,7 +159,7 @@ class TestDeriveViews(unittest.TestCase):
             "current_task": "你是数据分析师，请聚合下列指标。",
         }]
         view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[sub-agent] 数据分析师")
+        self.assertEqual(view.task, "")
 
     def test_long_imperative_review_collapsed(self) -> None:
         # Real sub-agent prompts are long boilerplate; only collapse when len
@@ -170,7 +170,7 @@ class TestDeriveViews(unittest.TestCase):
         )
         states = [{"session_id": "x", "status": "working", "current_task": long_review}]
         view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[sub-agent]")
+        self.assertEqual(view.task, "")
 
     def test_short_imperative_review_unchanged(self) -> None:
         # User typing "Review the code" must NOT be collapsed.
@@ -198,7 +198,7 @@ class TestDeriveViews(unittest.TestCase):
         )
         states = [{"session_id": "x", "status": "working", "current_task": long_task}]
         view = render.derive_views(states, now=self.now)[0]
-        self.assertEqual(view.task, "[sub-agent]")
+        self.assertEqual(view.task, "")
 
     def test_real_user_prompt_unchanged(self) -> None:
         states = [{

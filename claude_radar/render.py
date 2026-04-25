@@ -99,24 +99,26 @@ _IMPERATIVE_RENDER_MIN_LEN = 80
 
 
 def _simplify_subagent_task(task: str) -> str:
-    """Collapse sub-agent / Skill boilerplate prompts.
+    """Suppress sub-agent / Skill boilerplate prompts.
 
-    * Role-defining ("You are a X.") → ``[sub-agent] <role>``
-    * Long imperative system tasks ("Review the conversation transcripts and
-      produce a summary...") → ``[sub-agent]``
-    * Real user input ("Review the code") → unchanged.
+    Returns an empty string when ``task`` looks like a sub-agent payload
+    (role-defining or long imperative). The board treats empty tasks as
+    ``-`` — the same placeholder shown for idle / no-activity sessions.
+    Real user input passes through unchanged.
+
+    Note: the hook layer normally filters these before they reach state, so
+    this function is the render-time safety net for any pattern the hook
+    misses or for state files written before the hook fix.
     """
     if not task:
         return task
     for pat in _SUBAGENT_PATTERNS:
-        m = pat.match(task)
-        if m:
-            role = m.group(1).strip()
-            return f"[sub-agent] {role}" if role else "[sub-agent]"
+        if pat.match(task):
+            return ""
     if len(task) >= _IMPERATIVE_RENDER_MIN_LEN:
         for pat in _SUBAGENT_GENERIC_PATTERNS:
             if pat.match(task):
-                return "[sub-agent]"
+                return ""
     return task
 
 
