@@ -28,7 +28,47 @@ Non-goals — at least for v0.1:
 - A persistent history. Each state file is a snapshot, not a log.
 - LLM-powered task summaries. Nice-to-have but not load-bearing.
 
-## Three layers
+## Data flow
+
+```
+       ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+       │  Claude Code     │    │  Claude Code     │    │  Claude Code     │
+       │  session A       │    │  session B       │    │  session C       │
+       └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
+                │                       │                       │
+   UserPromptSubmit / Stop / Notification (hook events from Claude Code)
+                │                       │                       │
+                ▼                       ▼                       ▼
+       ┌─────────────────────────────────────────────────────────────────┐
+       │            hooks/state-tracker.sh   (bash 3.2 compatible)       │
+       │  · derives session_id from $TMUX or tty                         │
+       │  · maps event → status (UserPromptSubmit→working, Stop→waiting) │
+       │  · execs `python -m claude_radar.state set …`                   │
+       └─────────────────────────────────┬───────────────────────────────┘
+                                         │ atomic write (mkstemp + os.replace)
+                                         ▼
+       ┌─────────────────────────────────────────────────────────────────┐
+       │  ${CLAUDE_RADAR_HOME:-~/.claude-radar}/state/<session_id>.json  │
+       │  (one tiny JSON per session, no daemon, no DB)                  │
+       └────────────┬───────────────────────────────────────┬────────────┘
+                    │                                       │
+                    │ list_states() every 2s                │ list_states() once
+                    ▼                                       ▼
+       ┌──────────────────────────┐         ┌──────────────────────────────┐
+       │  claude_radar.tui        │         │  claude_radar.cli            │
+       │  (curses dashboard)      │         │  status_main()               │
+       │  ↑ keys: q  r  c         │         │  → "💬2 ⚡1 ○1"              │
+       └──────────────────────────┘         └──────────────────────────────┘
+                    ▲                                       ▲
+                    │  bin/claude-radar  ─── thin shims ─── bin/claude-radar-status
+                    │
+               render_board(states, w, h)            render_compact(states, …)
+                    │                                       │
+                    └──────── claude_radar.render ──────────┘
+                                  (pure, no I/O)
+```
+
+## Module layers
 
 ```
 hooks/state-tracker.sh        ← writes state (one file per session)

@@ -17,7 +17,7 @@ q quit · r refresh · c cleanup
 
 `💬` 等你回复 · `⚡` Claude 正在跑 · `○` 闲置
 
-> [asciinema 演示稍后补]
+> [asciinema demo coming soon]（演示稍后补）
 
 ---
 
