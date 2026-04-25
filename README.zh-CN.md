@@ -17,7 +17,9 @@ q quit · r refresh · c cleanup
 
 `💬` 等你回复 · `⚡` Claude 正在跑 · `○` 闲置
 
-> [asciinema demo coming soon]（演示稍后补）
+> 演示：<a href="docs/screenshots/demo.cast">docs/screenshots/demo.cast</a>
+> （asciicast v3，8.4 KB）。本地播放：
+> `asciinema play docs/screenshots/demo.cast`。
 
 ---
 

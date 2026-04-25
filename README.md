@@ -19,7 +19,9 @@ q quit · r refresh · c cleanup
 
 `💬` waiting on you · `⚡` Claude is working · `○` idle
 
-> [asciinema demo coming soon]
+> Demo: <a href="docs/screenshots/demo.cast">docs/screenshots/demo.cast</a>
+> (asciicast v3, 8.4 KB). Play locally with
+> `asciinema play docs/screenshots/demo.cast`.
 
 ---
 
