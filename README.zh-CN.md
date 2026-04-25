@@ -184,6 +184,20 @@ bash ~/.claude-radar/uninstall.sh --purge --purge-state
 
 ---
 
+## 已知限制
+
+- **`uninstall.sh` 会重排 `settings.json` 的格式。** 我们摘掉 hook 后会用
+  两格缩进重新序列化整个文件，所以你原本手工压缩的紧凑数组（比如
+  `"allow": ["Read"]`）会被展开成多行。语义完全等价；卸载前总会留一份
+  `.backup-<时间戳>`，需要原字节找回来即可。
+- **同一个 tmux session 下多个 pane 共用一行。** 如果你在同一个 tmux
+  session 的两个 pane 各开一个 Claude Code，它们会共享 state 文件、互相
+  覆盖。v0.2 计划用 `$TMUX_PANE` 加进 session id 解决。
+- **找不到 `python3` 时 hook 静默不动作。** hook 绝不能让 Claude Code 崩，
+  所以一旦 PATH 上没 Python，脚本直接 exit 0，看板就看不到更新而已。
+
+---
+
 ## Roadmap
 
 - [x] **v0.1** — 多 session 看板 + 一次性 status + 安装/卸载脚本

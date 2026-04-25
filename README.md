@@ -192,6 +192,23 @@ from `settings.json` (and leaves a backup).
 
 ---
 
+## Limitations
+
+- **`uninstall.sh` reformats `settings.json`.** When we strip our hooks we
+  re-serialise the JSON with two-space indentation, so any pre-existing
+  hand-formatting (compact arrays, custom indentation) will normalise to
+  our style. Semantically equivalent in every case; a `.backup-<unix>`
+  file is written first so you can recover the exact bytes if needed.
+- **One tmux session = one row, even with multiple panes.** If you run
+  two Claude Code sessions in panes of the same tmux session, they will
+  share a state file and overwrite each other. Tracked for v0.2 (will
+  include `$TMUX_PANE` in the session id).
+- **Hook silently no-ops if `python3` is unavailable.** Hooks must not
+  break Claude Code; if no Python is on `PATH` the script exits 0 and
+  the dashboard simply won't see updates.
+
+---
+
 ## Roadmap
 
 - [x] **v0.1** — multi-session board, one-shot status, install / uninstall
