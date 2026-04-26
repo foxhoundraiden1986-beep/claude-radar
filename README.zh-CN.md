@@ -5,17 +5,19 @@
 [English](./README.md)
 
 ```
-─ Claude Sessions ──────────────────────────────────── 15:23 ─
+╭─ Claude Sessions ──────────── 💬2 ⚡1 ○1 ─────────── 15:23 ─╮
+     session             task                              age
+─────────────────────────────────────────────────────────────
+ 💬  meta                window-manager design                5m
+▶💬  data-analysis       attribution debug                   13m
+ ⚡  dev                 refactor report_utils               41m
+ ○   review              -
 
-💬  data-analysis     线下新客归因                            13m
-💬  meta              窗口管理方案讨论                         5m
-⚡  dev               重构 report_utils                       41m
-○   review            -
-
-q quit · r refresh · c cleanup
+q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
 ```
 
-`💬` 等你回复 · `⚡` Claude 正在跑 · `○` 闲置
+`💬` 等你回复 · `⚡` Claude 正在跑 · `○` 闲置  
+`▶` 选中光标 · session id 显示**绿色** = 当前 attached 的 tmux session
 
 > 演示：<a href="docs/screenshots/demo.cast">docs/screenshots/demo.cast</a>
 > （asciicast v3，8.4 KB）。本地播放：
@@ -88,11 +90,14 @@ claude-radar
 
 打开全屏看板，每两秒自动刷新。
 
-| 按键      | 动作                                  |
-| --------- | ------------------------------------- |
-| `q`、`Esc`| 退出                                  |
-| `r`       | 立即刷新                              |
-| `c`       | 清掉超过 24 小时没活动的 state 文件   |
+| 按键               | 动作                                                  |
+| ------------------ | ----------------------------------------------------- |
+| `q`、`Esc`         | 退出                                                  |
+| `r`                | 立即刷新                                              |
+| `c`                | 清掉超过 24 小时没活动的 state 文件                   |
+| `↑` `↓` / `k` `j`  | 移动选中光标                                          |
+| `⏎` Enter          | 跳转到选中的 tmux session（在 tmux 内调 `switch-client`；看板跑在 tmux 外时通过 osascript 弹 Terminal/iTerm 新窗口） |
+| `i`                | 静音选中 session — 显示为 idle，直到它真实状态再次变化时自动解除 |
 
 某个 session 卡住了（被 `kill -9` 之类，`Stop` hook 没触发到）？看板里按
 `c` 即可；命令行里也可以：
@@ -202,8 +207,10 @@ bash ~/.claude-radar/uninstall.sh --purge --purge-state
 
 ## Roadmap
 
-- [x] **v0.1** — 多 session 看板 + 一次性 status + 安装/卸载脚本
-- [ ] **v0.2** — macOS 菜单栏小组件、按 pane 区分 session、`j` 跳转
+- [x] **v0.1** — 多 session 看板、一次性 status、安装/卸载脚本、跳转、静音、
+  状态计数、长任务换行、当前 attached 行高亮
+- [ ] **v0.2** — macOS 菜单栏小组件、按 pane 区分 session（一行对应一个 tmux
+  pane 而不是 session）、定期 LLM 摘要
 - [ ] **v0.3** — 长任务定时 LLM 摘要
 - [ ] **v0.4** — 历史回看（一小时前各个 session 在做什么？）
 

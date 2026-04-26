@@ -7,17 +7,19 @@
 [简体中文](./README.zh-CN.md)
 
 ```
-─ Claude Sessions ──────────────────────────────────── 15:23 ─
+╭─ Claude Sessions ──────────── 💬2 ⚡1 ○1 ─────────── 15:23 ─╮
+     session             task                              age
+─────────────────────────────────────────────────────────────
+ 💬  meta                window-manager design                5m
+▶💬  data-analysis       attribution debug                   13m
+ ⚡  dev                 refactor report_utils               41m
+ ○   review              -
 
-💬  data-analysis     线下新客归因                            13m
-💬  meta              窗口管理方案讨论                         5m
-⚡  dev               重构 report_utils                       41m
-○   review            -
-
-q quit · r refresh · c cleanup
+q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
 ```
 
-`💬` waiting on you · `⚡` Claude is working · `○` idle
+`💬` waiting on you · `⚡` Claude is working · `○` idle  
+`▶` selection cursor · session id in **green** = currently focused tmux client
 
 > Demo: <a href="docs/screenshots/demo.cast">docs/screenshots/demo.cast</a>
 > (asciicast v3, 8.4 KB). Play locally with
@@ -92,11 +94,14 @@ claude-radar
 
 Opens a full-screen curses dashboard that refreshes every two seconds.
 
-| key       | action                                                   |
-| --------- | -------------------------------------------------------- |
-| `q`, `Esc`| quit                                                     |
-| `r`       | refresh immediately                                      |
-| `c`       | delete state files older than 24h                        |
+| key                | action                                                |
+| ------------------ | ----------------------------------------------------- |
+| `q`, `Esc`         | quit                                                  |
+| `r`                | refresh immediately                                   |
+| `c`                | delete state files older than 24h                     |
+| `↑` `↓` / `k` `j`  | move the selection cursor                             |
+| `⏎` Enter          | jump to the selected tmux session (`switch-client` inside tmux; opens a new Terminal/iTerm window via osascript when the dashboard runs outside tmux) |
+| `i`                | mute the selected session — render it as idle until its real status changes |
 
 Need to recover from a stuck session (Claude got `kill -9`'d, hooks never
 fired `Stop`)? Either press `c` inside the TUI, or run:
@@ -213,8 +218,10 @@ from `settings.json` (and leaves a backup).
 
 ## Roadmap
 
-- [x] **v0.1** — multi-session board, one-shot status, install / uninstall
-- [ ] **v0.2** — menu-bar widget (macOS), per-pane sessions, `j` jump-to
+- [x] **v0.1** — multi-session board, one-shot status, install / uninstall,
+  jump-to-session, mute, status counts, wrapped tasks, focused-row indicator
+- [ ] **v0.2** — menu-bar widget (macOS), per-pane sessions (one row per
+  tmux pane, not per session), periodic LLM summaries
       session
 - [ ] **v0.3** — periodic LLM summary of long-running tasks
 - [ ] **v0.4** — windowed history (what was each session doing 1h ago?)
