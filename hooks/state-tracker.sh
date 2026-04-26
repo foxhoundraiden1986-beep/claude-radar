@@ -150,12 +150,16 @@ _IMPERATIVE_RX = (
 _IMPERATIVE_MIN_LEN = 200
 _HARD_LENGTH_LIMIT = 1500
 
+# Sentinel emitted on sub-agent / Skill match. The shell sees this exact
+# string and aborts the *entire* hook — including the status flip — so
+# sub-agent runs don't bounce the main session between working / waiting.
+_SKIP = "__RADAR_SKIP__"
 if any(rx.match(val) for rx in _ROLE_RX):
-    sys.exit(0)
+    print(_SKIP); sys.exit(0)
 if len(val) > _HARD_LENGTH_LIMIT:
-    sys.exit(0)
+    print(_SKIP); sys.exit(0)
 if len(val) >= _IMPERATIVE_MIN_LEN and any(rx.match(val) for rx in _IMPERATIVE_RX):
-    sys.exit(0)
+    print(_SKIP); sys.exit(0)
 # Trim to a sensible length for the dashboard.
 print(val[:160])
 PY
@@ -169,6 +173,12 @@ case "$HOOK_TYPE" in
     UserPromptSubmit)
         # The hook payload field is "prompt" per spec §6.1.
         USER_PROMPT="$(extract_field "$STDIN_JSON" prompt)"
+        # Sub-agent / Skill prompt detected — leave state untouched. Writing
+        # status=working here would yo-yo the main session every time a
+        # background skill fires UserPromptSubmit.
+        if [ "$USER_PROMPT" = "__RADAR_SKIP__" ]; then
+            exit 0
+        fi
         ;;
 esac
 
