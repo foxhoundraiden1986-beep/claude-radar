@@ -33,9 +33,9 @@ q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
 不到全局）。
 
 `claude-radar` 是一个非常小的 CLI：挂在 Claude Code 的
-`UserPromptSubmit` / `Stop` / `Notification` 三个 hook 上，每个 session
-对应 `~/.claude-radar/state/` 下一个 JSON 文件，再用 curses 把它们渲染
-成一个看板。你可以把它扔在 tmux 的某个角落一直开着。
+`UserPromptSubmit` / `Stop` / `Notification` / `PreToolUse` 四个 hook
+上，每个 session 对应 `~/.claude-radar/state/` 下一个 JSON 文件，再用
+curses 把它们渲染成一个看板。你可以把它扔在 tmux 的某个角落一直开着。
 
 ---
 
@@ -60,8 +60,8 @@ export PATH="$HOME/.claude-radar/bin:$PATH"
 
 1. 把项目文件复制到 `$CLAUDE_RADAR_HOME`（默认 `~/.claude-radar`）。
 2. 把 `~/.claude/settings.json` 备份到 `settings.json.backup-<时间戳>`。
-3. 幂等地往 settings.json 里塞三个 hook（`UserPromptSubmit` / `Stop` /
-   `Notification`）。重复跑也不会塞重复。
+3. 幂等地往 settings.json 里塞四个 hook（`UserPromptSubmit` / `Stop` /
+   `Notification` / `PreToolUse`）。重复跑也不会塞重复。
 
 如果想往别的 settings 文件里注入（比如 CI、开发沙箱）：
 
@@ -135,7 +135,7 @@ set -g status-interval 5
 │ Claude Code  │                       │ Claude Code  │
 │ session A    │                       │ session B    │
 └──────┬───────┘                       └──────┬───────┘
-       │ UserPromptSubmit / Stop / Notification
+       │ UserPromptSubmit / Stop / Notification / PreToolUse
        ↓                                      ↓
 ┌──────────────────────────────────────────────────────┐
 │ ~/.claude-radar/state/<session_id>.json              │

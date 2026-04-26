@@ -134,6 +134,7 @@ def set_state(
     tty: Optional[str] = None,
     cwd: Optional[str] = None,
     timestamp: Optional[str] = None,
+    via_tool: bool = False,
 ) -> Dict[str, Any]:
     """Update state for ``session_id`` and return the new payload.
 
@@ -148,6 +149,11 @@ def set_state(
     * The user-set ``ignored`` flag clears whenever ``status`` actually
       changes — once the session becomes active again, the mute should
       not silently linger.
+
+    ``via_tool=True`` flags a PreToolUse-driven flip back to working: keep
+    ``task_started_at`` / ``last_user_prompt_at`` / ``current_task`` from
+    the original prompt so the dashboard's age clock doesn't reset every
+    time the agent oscillates between Stop and the next tool call.
     """
     if status not in VALID_STATUS:
         raise ValueError(f"invalid status {status!r}; must be one of {VALID_STATUS}")
@@ -174,9 +180,14 @@ def set_state(
         payload.setdefault("status_changed_at", ts)
 
     if status == "working":
-        if prev_status != "working" or "task_started_at" not in payload:
-            payload["task_started_at"] = ts
-        payload["last_user_prompt_at"] = ts
+        if via_tool:
+            # PreToolUse flip: preserve the prompt's task_started_at so the
+            # dashboard age clock keeps counting from the original prompt.
+            payload.setdefault("task_started_at", ts)
+        else:
+            if prev_status != "working" or "task_started_at" not in payload:
+                payload["task_started_at"] = ts
+            payload["last_user_prompt_at"] = ts
         if task is not None:
             payload["current_task"] = task
     elif status == "waiting":
@@ -288,6 +299,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--tty", default=None)
     p_set.add_argument("--cwd", default=None)
     p_set.add_argument("--timestamp", default=None, help="Override timestamp (ISO-8601).")
+    p_set.add_argument(
+        "--via-tool",
+        action="store_true",
+        help="Flip to working from a PreToolUse hook; preserve task fields.",
+    )
 
     p_get = sub.add_parser("get", help="Print state for a session.")
     p_get.add_argument("--session", required=True)
@@ -321,6 +337,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             tty=args.tty,
             cwd=args.cwd,
             timestamp=args.timestamp,
+            via_tool=args.via_tool,
         )
         _emit(payload)
         return 0

@@ -198,7 +198,17 @@ def derive_view(
     sid = str(raw.get("session_id") or "?")
     task = str(raw.get("current_task") or "")
 
-    started = _parse_iso(raw.get("status_changed_at"))
+    # For working sessions the "age" we want is "how long has this task been
+    # running" — anchor on task_started_at, which is preserved across the
+    # rapid Stop→PreToolUse→Stop oscillation typical of tool-heavy turns.
+    # For waiting / idle, status_changed_at is the right clock.
+    if raw_status == STATUS_WORKING:
+        started = (
+            _parse_iso(raw.get("task_started_at"))
+            or _parse_iso(raw.get("status_changed_at"))
+        )
+    else:
+        started = _parse_iso(raw.get("status_changed_at"))
     age = 0 if started is None else max(0, int((now - started).total_seconds()))
 
     status = raw_status

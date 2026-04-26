@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # claude-radar state-tracker hook.
 #
-# Wired into Claude Code's UserPromptSubmit / Stop / Notification hooks.
-# Reads the hook payload from stdin (Claude Code hook protocol), derives a
-# stable session id (tmux session name when available, ttyname otherwise),
-# and delegates to ``python -m claude_radar.state set`` to update the JSON
-# under $CLAUDE_RADAR_HOME/state.
+# Wired into Claude Code's UserPromptSubmit / Stop / Notification /
+# PreToolUse hooks. Reads the hook payload from stdin (Claude Code hook
+# protocol), derives a stable session id (tmux session name when
+# available, ttyname otherwise), and delegates to
+# ``python -m claude_radar.state set`` to update the JSON under
+# $CLAUDE_RADAR_HOME/state.
+#
+# PreToolUse exists to fix a Stop-firing-mid-turn bug: Claude Code emits
+# the Stop hook between tool calls inside a single user turn, which would
+# otherwise leave the dashboard stuck on 💬 waiting while the agent is
+# still actively running. Each PreToolUse flips us back to ⚡ working
+# (with --via-tool to preserve the task clock).
 #
 # macOS bash 3.2 compatible: no associative arrays, no mapfile/readarray,
 # no process substitution into arrays.
@@ -14,7 +21,7 @@ set -u  # don't die on individual errors — hooks must be best-effort.
 
 HOOK_TYPE="${1:-}"
 if [ -z "$HOOK_TYPE" ]; then
-    echo "usage: state-tracker.sh <UserPromptSubmit|Stop|Notification>" >&2
+    echo "usage: state-tracker.sh <UserPromptSubmit|Stop|Notification|PreToolUse>" >&2
     exit 64
 fi
 
@@ -185,9 +192,16 @@ esac
 CWD_NOW="$(pwd 2>/dev/null || true)"
 
 # --- map hook type -> status -----------------------------------------------
+VIA_TOOL=0
 case "$HOOK_TYPE" in
     UserPromptSubmit)
         STATUS="working"
+        ;;
+    PreToolUse)
+        # Tool fired → agent is still running. Flip back to working but
+        # preserve the original prompt's task clock via --via-tool.
+        STATUS="working"
+        VIA_TOOL=1
         ;;
     Stop|Notification)
         STATUS="waiting"
@@ -210,6 +224,10 @@ fi
 
 if [ "$STATUS" = "working" ] && [ -n "$USER_PROMPT" ]; then
     ARGS=( "${ARGS[@]}" --task "$USER_PROMPT" )
+fi
+
+if [ "$VIA_TOOL" = "1" ]; then
+    ARGS=( "${ARGS[@]}" --via-tool )
 fi
 
 # Add the repo root to PYTHONPATH so ``python -m claude_radar.state`` works

@@ -36,9 +36,10 @@ look at "is the Claude process alive" (wrong: that conflates running and
 waiting) or fire one-shot macOS notifications (no overview).
 
 `claude-radar` is a tiny CLI that hooks into Claude Code's
-`UserPromptSubmit` / `Stop` / `Notification` events, writes one JSON file
-per session under `~/.claude-radar/state/`, and renders that as a curses
-dashboard you can leave running in a corner of your tmux layout.
+`UserPromptSubmit` / `Stop` / `Notification` / `PreToolUse` events,
+writes one JSON file per session under `~/.claude-radar/state/`, and
+renders that as a curses dashboard you can leave running in a corner of
+your tmux layout.
 
 ---
 
@@ -64,8 +65,9 @@ The installer:
 1. Copies the project files into `$CLAUDE_RADAR_HOME` (default
    `~/.claude-radar`).
 2. Backs up `~/.claude/settings.json` to `settings.json.backup-<ts>`.
-3. Idempotently injects three hook entries (`UserPromptSubmit`, `Stop`,
-   `Notification`). Re-running the installer never duplicates them.
+3. Idempotently injects four hook entries (`UserPromptSubmit`, `Stop`,
+   `Notification`, `PreToolUse`). Re-running the installer never
+   duplicates them.
 
 To install hooks into a custom settings file (handy in CI / dev sandboxes):
 
@@ -139,7 +141,7 @@ set -g status-interval 5
 │ Claude Code  │                       │ Claude Code  │
 │ session A    │                       │ session B    │
 └──────┬───────┘                       └──────┬───────┘
-       │ UserPromptSubmit / Stop / Notification
+       │ UserPromptSubmit / Stop / Notification / PreToolUse
        ↓                                      ↓
 ┌──────────────────────────────────────────────────────┐
 │ ~/.claude-radar/state/<session_id>.json              │

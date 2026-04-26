@@ -113,6 +113,42 @@ class TestFieldPreservation(StateTestBase):
         )
         self.assertEqual(same["status_changed_at"], first["status_changed_at"])
 
+    def test_via_tool_preserves_task_clock_after_stop(self) -> None:
+        # The Stop hook can fire mid-turn; the next PreToolUse must flip us
+        # back to working WITHOUT resetting task_started_at / current_task /
+        # last_user_prompt_at, otherwise the dashboard age clock keeps
+        # rebooting to 0.
+        first = state.set_state(
+            "alpha", "working", task="real prompt",
+            timestamp="2026-04-25T10:00:00+00:00",
+        )
+        state.set_state("alpha", "waiting", timestamp="2026-04-25T10:00:30+00:00")
+        flipped = state.set_state(
+            "alpha", "working",
+            timestamp="2026-04-25T10:01:00+00:00",
+            via_tool=True,
+        )
+        self.assertEqual(flipped["task_started_at"], first["task_started_at"])
+        self.assertEqual(flipped["current_task"], "real prompt")
+        self.assertEqual(
+            flipped["last_user_prompt_at"], first["last_user_prompt_at"]
+        )
+        self.assertEqual(flipped["status"], "working")
+
+    def test_via_tool_does_not_overwrite_task(self) -> None:
+        state.set_state(
+            "alpha", "working", task="real prompt",
+            timestamp="2026-04-25T10:00:00+00:00",
+        )
+        # PreToolUse never carries a task; ensure it can't accidentally
+        # blank the field even if a future caller passes task="".
+        flipped = state.set_state(
+            "alpha", "working", task=None,
+            timestamp="2026-04-25T10:01:00+00:00",
+            via_tool=True,
+        )
+        self.assertEqual(flipped["current_task"], "real prompt")
+
 
 class TestAtomicWrite(StateTestBase):
     def test_no_tmp_files_left_after_set(self) -> None:

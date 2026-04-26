@@ -54,7 +54,7 @@ class TestInject(InjectHooksTestBase):
             {
                 "model": "claude-opus",
                 "hooks": {
-                    "PreToolUse": [
+                    "PostToolUse": [
                         {"hooks": [{"type": "command", "command": "echo hi"}]}
                     ]
                 },
@@ -63,10 +63,10 @@ class TestInject(InjectHooksTestBase):
         inject_hooks.inject(self.settings, self.install_dir)
         data = self._read()
         self.assertEqual(data["model"], "claude-opus")
-        self.assertIn("PreToolUse", data["hooks"])
-        # Pre-existing PreToolUse command must still be there.
+        self.assertIn("PostToolUse", data["hooks"])
+        # Pre-existing PostToolUse command must still be there.
         self.assertEqual(
-            data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "echo hi"
+            data["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "echo hi"
         )
 
     def test_inject_is_idempotent(self) -> None:
@@ -105,7 +105,7 @@ class TestRemove(InjectHooksTestBase):
         self._write(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    "PostToolUse": [
                         {"hooks": [{"type": "command", "command": "echo hi"}]}
                     ]
                 }
@@ -114,9 +114,9 @@ class TestRemove(InjectHooksTestBase):
         inject_hooks.inject(self.settings, self.install_dir)
         inject_hooks.remove(self.settings)
         data = self._read()
-        self.assertIn("PreToolUse", data["hooks"])
+        self.assertIn("PostToolUse", data["hooks"])
         self.assertEqual(
-            data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "echo hi"
+            data["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "echo hi"
         )
         for ev in inject_hooks.HOOK_EVENTS:
             self.assertNotIn(ev, data["hooks"])

@@ -1,7 +1,7 @@
 """Idempotently inject claude-radar hooks into a Claude Code settings file.
 
 Claude Code reads its hook configuration from ``~/.claude/settings.json``.
-This script reads that JSON, adds the three claude-radar hooks (if not
+This script reads that JSON, adds the four claude-radar hooks (if not
 already present), and writes it back atomically.
 
 Hooks structure (Claude Code v0.x — see README "Configuration"):
@@ -13,7 +13,8 @@ Hooks structure (Claude Code v0.x — see README "Configuration"):
           ...
         ],
         "Stop": [...],
-        "Notification": [...]
+        "Notification": [...],
+        "PreToolUse": [...]
       }
     }
 
@@ -35,7 +36,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-HOOK_EVENTS = ("UserPromptSubmit", "Stop", "Notification")
+HOOK_EVENTS = ("UserPromptSubmit", "Stop", "Notification", "PreToolUse")
 DEFAULT_SETTINGS = Path.home() / ".claude" / "settings.json"
 DEFAULT_INSTALL_DIR = Path.home() / ".claude-radar"
 
