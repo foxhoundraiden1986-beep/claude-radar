@@ -140,14 +140,37 @@ class TestFieldPreservation(StateTestBase):
             "alpha", "working", task="real prompt",
             timestamp="2026-04-25T10:00:00+00:00",
         )
-        # PreToolUse never carries a task; ensure it can't accidentally
-        # blank the field even if a future caller passes task="".
+        # PreToolUse never carries a task — confirm a via_tool flip with
+        # task=None preserves current_task rather than clobbering it.
         flipped = state.set_state(
             "alpha", "working", task=None,
             timestamp="2026-04-25T10:01:00+00:00",
             via_tool=True,
         )
         self.assertEqual(flipped["current_task"], "real prompt")
+
+    def test_via_tool_preserves_user_mute(self) -> None:
+        # User mutes a session that has already flipped to waiting.
+        state.set_state(
+            "alpha", "working", task="real prompt",
+            timestamp="2026-04-25T10:00:00+00:00",
+        )
+        state.set_state("alpha", "waiting", timestamp="2026-04-25T10:00:30+00:00")
+        state.set_ignored("alpha", True)
+        # PreToolUse flips back to working; the mute must survive — it's a
+        # user-meaningful flag, not a status-transition artefact.
+        flipped = state.set_state(
+            "alpha", "working",
+            timestamp="2026-04-25T10:01:00+00:00",
+            via_tool=True,
+        )
+        self.assertTrue(flipped.get("ignored"))
+        # And a *real* user prompt afterwards must still clear it.
+        cleared = state.set_state(
+            "alpha", "working", task="next prompt",
+            timestamp="2026-04-25T10:02:00+00:00",
+        )
+        self.assertNotIn("ignored", cleared)
 
 
 class TestAtomicWrite(StateTestBase):

@@ -148,7 +148,7 @@ def inject(
     *,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Add (or keep) the three claude-radar hooks. Returns the new settings dict."""
+    """Add (or keep) the four claude-radar hooks. Returns the new settings dict."""
     settings, existed = _load_settings(settings_path)
     hooks = settings.setdefault("hooks", {})
     if not isinstance(hooks, dict):

@@ -146,9 +146,11 @@ def set_state(
     * ``status_changed_at`` is updated only when ``status`` actually changes.
     * ``last_user_prompt_at`` is bumped on each ``working`` write.
     * ``last_assistant_stop_at`` is bumped on each ``waiting`` write.
-    * The user-set ``ignored`` flag clears whenever ``status`` actually
-      changes — once the session becomes active again, the mute should
-      not silently linger.
+    * The user-set ``ignored`` flag clears only on a real user prompt
+      (``status="working"`` with ``via_tool=False``). Stop /
+      Notification / PreToolUse / mid-turn oscillation all preserve it,
+      so a mute set during one turn survives until the user actually
+      engages with the session again.
 
     ``via_tool=True`` flags a PreToolUse-driven flip back to working: keep
     ``task_started_at`` / ``last_user_prompt_at`` / ``current_task`` from
@@ -174,8 +176,6 @@ def set_state(
 
     if prev_status != status:
         payload["status_changed_at"] = ts
-        # Real status transition — clear any user-set mute.
-        payload.pop("ignored", None)
     else:
         payload.setdefault("status_changed_at", ts)
 
@@ -188,6 +188,10 @@ def set_state(
             if prev_status != "working" or "task_started_at" not in payload:
                 payload["task_started_at"] = ts
             payload["last_user_prompt_at"] = ts
+            # Real user prompt — that's the user re-engaging with this
+            # session, so clear any mute set during the previous turn.
+            # Stop / Notification / PreToolUse all preserve it.
+            payload.pop("ignored", None)
         if task is not None:
             payload["current_task"] = task
     elif status == "waiting":

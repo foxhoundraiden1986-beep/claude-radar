@@ -200,6 +200,12 @@ case "$HOOK_TYPE" in
     PreToolUse)
         # Tool fired → agent is still running. Flip back to working but
         # preserve the original prompt's task clock via --via-tool.
+        # We deliberately do NOT run the sub-agent / Skill prompt filter
+        # for PreToolUse: --via-tool is a no-op on task identity
+        # (current_task / task_started_at / last_user_prompt_at all
+        # preserved), so a sub-agent's tool calls can't pollute the
+        # parent session's task display. If --via-tool semantics ever
+        # change, revisit this.
         STATUS="working"
         VIA_TOOL=1
         ;;
