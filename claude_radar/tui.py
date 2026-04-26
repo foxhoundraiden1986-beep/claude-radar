@@ -40,15 +40,28 @@ def _safe_addstr(win: "curses._CursesWindow", y: int, x: int, text: str, attr: i
         pass
 
 
+# Color pair slots
+_PAIR_WAITING = 1
+_PAIR_WORKING = 2
+_PAIR_IDLE = 3
+_PAIR_CHROME = 4   # rounded box, separator
+_PAIR_HEADER = 5   # column header (session/task/age)
+_PAIR_SELECTED = 6  # selection background
+
+
 def _color_for(status: str) -> int:
-    """Return a curses color-pair index for a status, or 0 if colors disabled."""
+    """Return a curses attr for a status, or 0 if colors disabled."""
     if not curses.has_colors():
+        if status == render.STATUS_WAITING:
+            return curses.A_BOLD
+        if status == render.STATUS_IDLE:
+            return curses.A_DIM
         return 0
     if status == render.STATUS_WAITING:
-        return curses.color_pair(1) | curses.A_BOLD
+        return curses.color_pair(_PAIR_WAITING) | curses.A_BOLD
     if status == render.STATUS_WORKING:
-        return curses.color_pair(2)
-    return curses.color_pair(3)
+        return curses.color_pair(_PAIR_WORKING)
+    return curses.color_pair(_PAIR_IDLE) | curses.A_DIM
 
 
 def _init_colors() -> None:
@@ -60,9 +73,44 @@ def _init_colors() -> None:
         bg = -1
     except curses.error:
         bg = curses.COLOR_BLACK
-    curses.init_pair(1, curses.COLOR_RED, bg)      # waiting
-    curses.init_pair(2, curses.COLOR_YELLOW, bg)   # working
-    curses.init_pair(3, curses.COLOR_WHITE, bg)    # idle / chrome
+
+    # Prefer 256-color codes — they bypass the user's 8-color palette which
+    # most modern themes (Catppuccin, Rose Pine, Dracula, etc.) remap into a
+    # tight tonal range, making COLOR_RED / YELLOW / WHITE indistinguishable.
+    # Falls back to the basic palette for limited terminals (TERM=xterm,
+    # tmux without -T xterm-256color, etc.).
+    if curses.COLORS >= 256:
+        c_waiting = 215   # warm amber — actionable but not alarming
+        c_working = 81    # cool cyan — calmly progressing
+        c_idle = 244      # mid grey — fades into the background
+        c_chrome = 67     # muted blue — chrome / separator lines
+        c_header = 248    # light grey — column header text
+        c_sel_bg = 24     # deep teal background — selection
+        c_sel_fg = 231    # off-white foreground — selection
+    else:
+        c_waiting = curses.COLOR_YELLOW
+        c_working = curses.COLOR_CYAN
+        c_idle = curses.COLOR_WHITE
+        c_chrome = curses.COLOR_BLUE
+        c_header = curses.COLOR_WHITE
+        c_sel_bg = curses.COLOR_BLUE
+        c_sel_fg = curses.COLOR_WHITE
+
+    curses.init_pair(_PAIR_WAITING, c_waiting, bg)
+    curses.init_pair(_PAIR_WORKING, c_working, bg)
+    curses.init_pair(_PAIR_IDLE, c_idle, bg)
+    curses.init_pair(_PAIR_CHROME, c_chrome, bg)
+    curses.init_pair(_PAIR_HEADER, c_header, bg)
+    curses.init_pair(_PAIR_SELECTED, c_sel_fg, c_sel_bg)
+
+
+def _selection_attr(base_attr: int) -> int:
+    """Compose a row attr with the selection background (foreground kept readable)."""
+    if curses.has_colors():
+        # Replace the color pair with selection's background; keep BOLD/DIM bits.
+        no_color = base_attr & ~(curses.A_COLOR if hasattr(curses, "A_COLOR") else 0xFF00)
+        return curses.color_pair(_PAIR_SELECTED) | curses.A_BOLD
+    return base_attr | curses.A_REVERSE
 
 
 def _draw(
@@ -81,19 +129,27 @@ def _draw(
     rows = layout.rows
     views = render.derive_views(raw_states, now=now)
 
-    # rows[0]=chrome, rows[1]=column header, rows[2]=blank, body, footer.
-    _safe_addstr(stdscr, 0, 0, rows[0], _color_for(render.STATUS_IDLE))
-    _safe_addstr(stdscr, 1, 0, rows[1], curses.A_DIM if curses.has_colors() else 0)
-    _safe_addstr(stdscr, 2, 0, rows[2])
+    # rows[0]=chrome, rows[1]=column header, rows[2]=separator, body, footer.
+    chrome_attr = (
+        curses.color_pair(_PAIR_CHROME) if curses.has_colors() else curses.A_DIM
+    )
+    header_attr = (
+        curses.color_pair(_PAIR_HEADER) | curses.A_DIM
+        if curses.has_colors()
+        else curses.A_DIM
+    )
+    _safe_addstr(stdscr, 0, 0, rows[0], chrome_attr)
+    _safe_addstr(stdscr, 1, 0, rows[1], header_attr)
+    _safe_addstr(stdscr, 2, 0, rows[2], chrome_attr | curses.A_DIM)
     body_start = layout.body_start
     body_rows = rows[body_start : -1]
     for i, row in enumerate(body_rows):
         owner = layout.body_owners[i] if i < len(layout.body_owners) else None
-        attr = 0
         if owner is not None and owner < len(views):
-            attr = _color_for(views[owner].status)
-            if owner == selected_index:
-                attr |= curses.A_REVERSE
+            base = _color_for(views[owner].status)
+            attr = _selection_attr(base) if owner == selected_index else base
+        else:
+            attr = 0
         _safe_addstr(stdscr, body_start + i, 0, row, attr)
     # Footer.
     footer_attr = curses.A_DIM if curses.has_colors() else 0

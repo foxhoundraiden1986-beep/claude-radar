@@ -464,7 +464,10 @@ def render_board_layout(
     )
     col_header = pad_display(truncate_display(col_header, width), width)
 
-    rows: List[str] = [header, col_header, ""]
+    # Thin separator under the column header — gives the body a clear visual
+    # baseline without stealing attention. Drawn dim by the TUI.
+    separator = pad_display(truncate_display("─" * width, width), width)
+    rows: List[str] = [header, col_header, separator]
     # Maps each body row index (0-based within body) to its view index, or
     # None for the "+N more" trailer. The TUI uses this for selection
     # highlighting that spans wrapped task lines.
