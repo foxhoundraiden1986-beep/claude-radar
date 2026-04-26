@@ -350,14 +350,17 @@ def _wrap_to_width(text: str, width: int) -> List[str]:
 def board_column_widths(width: int) -> Tuple[int, int]:
     """Return (name_width, task_width) for a given total board width.
 
-    Layout per body row: ``emoji(2)  name  task  age(6)`` — three 2-cell
-    gaps, so the fixed overhead is 2 + 2*3 + 6 = 14 cells. The col header
-    uses the same numbers so columns line up cell-for-cell.
+    Layout per body row: ``cursor(1) emoji(2)  name  task  age(6)`` —
+    cursor is a 1-cell slot at column 0 that the TUI fills with ``▶`` on
+    the selected row, three 2-cell gaps between cells, so the fixed
+    overhead is 1 + 2 + 2*3 + 6 = 15 cells. Column header uses the same
+    layout so everything lines up.
     """
+    cursor_slot = 1
     emoji_slot = 2
     gap = 2
     age_slot = 6
-    fixed = emoji_slot + 3 * gap + age_slot  # = 14
+    fixed = cursor_slot + emoji_slot + 3 * gap + age_slot  # = 15
     avail = max(10, width) - fixed
     if avail < 10:
         avail = max(10, width - 6)
@@ -375,7 +378,12 @@ def view_line_count(view: SessionView, task_width: int) -> int:
 
 
 def _board_view_lines(view: SessionView, name_width: int, task_width: int) -> List[str]:
-    """Render ``view`` as a list of body rows; long tasks wrap onto extras."""
+    """Render ``view`` as a list of body rows; long tasks wrap onto extras.
+
+    Each row begins with a single space at column 0 — the TUI overlays a
+    ``▶`` cursor in that slot for the selected view's head row. Continuation
+    rows leave the slot empty so wrapped tasks stay visually grouped.
+    """
     emoji = _emoji_cell(view.status)
     name = pad_display(truncate_display(view.session_id, name_width), name_width)
     if view.status == STATUS_IDLE:
@@ -388,13 +396,14 @@ def _board_view_lines(view: SessionView, name_width: int, task_width: int) -> Li
     blank_emoji = pad_display("", 2)
     blank_name = pad_display("", name_width)
     blank_age = pad_display("", 6)
+    cursor_slot = " "  # 1 cell — TUI overlays "▶" on selected head row
     lines: List[str] = []
     for i, chunk in enumerate(chunks):
         task_cell = pad_display(chunk, task_width)
         if i == 0:
-            line = f"{emoji}  {name}  {task_cell}  {age}".rstrip()
+            line = f"{cursor_slot}{emoji}  {name}  {task_cell}  {age}".rstrip()
         else:
-            line = f"{blank_emoji}  {blank_name}  {task_cell}  {blank_age}".rstrip()
+            line = f"{cursor_slot}{blank_emoji}  {blank_name}  {task_cell}  {blank_age}".rstrip()
         lines.append(line)
     return lines
 
@@ -453,14 +462,15 @@ def render_board_layout(
     header = truncate_display(header, width)
     header = pad_display(header, width)
 
-    # Column header — exact 4-space left margin (emoji slot + first gap),
-    # then session/task/age aligned cell-for-cell with body rows.
+    # Column header — cursor(1) + emoji(2) + first gap(2) = 5 spaces of
+    # left margin, then session/task/age aligned cell-for-cell with body.
     name_width, task_width = board_column_widths(width)
+    cursor_slot = 1
     emoji_slot = 2
     gap = 2
     age_slot = 6
     col_header = (
-        " " * (emoji_slot + gap)
+        " " * (cursor_slot + emoji_slot + gap)
         + pad_display("session", name_width)
         + " " * gap
         + pad_display("task", task_width)

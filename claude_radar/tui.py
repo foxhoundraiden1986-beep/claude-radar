@@ -145,14 +145,23 @@ def _draw(
     _safe_addstr(stdscr, 2, 0, rows[2], chrome_attr | curses.A_DIM)
     body_start = layout.body_start
     body_rows = rows[body_start : -1]
+    prev_owner: Optional[int] = None
     for i, row in enumerate(body_rows):
         owner = layout.body_owners[i] if i < len(layout.body_owners) else None
         if owner is not None and owner < len(views):
             base = _color_for(views[owner].status)
-            attr = _selection_attr(base) if owner == selected_index else base
+            is_selected = owner == selected_index
+            attr = _selection_attr(base) if is_selected else base
         else:
+            base = 0
+            is_selected = False
             attr = 0
         _safe_addstr(stdscr, body_start + i, 0, row, attr)
+        # Cursor marker on the selected view's head row (first row of group).
+        if is_selected and owner != prev_owner:
+            cursor_attr = (attr | curses.A_BOLD) if curses.has_colors() else curses.A_BOLD | curses.A_REVERSE
+            _safe_addstr(stdscr, body_start + i, 0, "▶", cursor_attr)
+        prev_owner = owner
     # Footer.
     footer_attr = curses.A_DIM if curses.has_colors() else 0
     _safe_addstr(stdscr, height - 1, 0, rows[-1], footer_attr)
