@@ -143,18 +143,27 @@ def _draw(
     _safe_addstr(stdscr, 0, 0, rows[0], chrome_attr)
     _safe_addstr(stdscr, 1, 0, rows[1], header_attr)
     _safe_addstr(stdscr, 2, 0, rows[2], chrome_attr | curses.A_DIM)
+    focused = _focused_tmux_session()
     body_start = layout.body_start
     body_rows = rows[body_start : -1]
     prev_owner: Optional[int] = None
     for i, row in enumerate(body_rows):
         owner = layout.body_owners[i] if i < len(layout.body_owners) else None
         if owner is not None and owner < len(views):
-            base = _color_for(views[owner].status)
+            view = views[owner]
+            base = _color_for(view.status)
             is_selected = owner == selected_index
+            is_focused = focused is not None and view.tmux_session == focused
             attr = _selection_attr(base) if is_selected else base
+            if is_focused:
+                # Make the row the user is actually attached to obvious — bold
+                # + underline reads on top of the status color and on top of
+                # the selection background.
+                attr |= curses.A_BOLD | curses.A_UNDERLINE
         else:
             base = 0
             is_selected = False
+            is_focused = False
             attr = 0
         _safe_addstr(stdscr, body_start + i, 0, row, attr)
         # Cursor marker on the selected view's head row (first row of group).
@@ -200,6 +209,26 @@ def _list_tmux_clients() -> List[str]:
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         return []
     return [line for line in r.stdout.splitlines() if line.strip()]
+
+
+def _focused_tmux_session() -> Optional[str]:
+    """Best-effort: which tmux session is the user currently attached to?
+
+    Returns the session name of the first attached tmux client, or None.
+    Used to highlight the row that matches the user's actual foreground
+    window (separate from the dashboard's own selection cursor).
+    """
+    if shutil.which("tmux") is None:
+        return None
+    try:
+        r = subprocess.run(
+            ["tmux", "list-clients", "-F", "#{client_session}"],
+            check=True, capture_output=True, text=True, timeout=2,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    sessions = [s for s in r.stdout.splitlines() if s.strip()]
+    return sessions[0] if sessions else None
 
 
 def _spawn_attach_macos(target: str) -> Optional[str]:
