@@ -12,6 +12,8 @@ Key bindings:
     c, C           cleanup state files older than 24h
     ↑/k, ↓/j       move selection
     ⏎ / Enter      jump to selected tmux session (switch-client / attach hint)
+    i, I           mute (toggle): render selected session as idle until its
+                   real status changes again
 """
 
 from __future__ import annotations
@@ -301,6 +303,16 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
         if ch in (curses.KEY_ENTER, 10, 13):
             if n:
                 status_msg = _jump_to(views[selected_index])
+            continue
+        if ch in (ord("i"), ord("I")):
+            if n:
+                v = views[selected_index]
+                if v.raw_status == render.STATUS_IDLE:
+                    state.set_ignored(v.session_id, False)
+                    status_msg = f" unmuted {v.session_id} "
+                else:
+                    state.set_ignored(v.session_id, True)
+                    status_msg = f" muted {v.session_id} (resets on next activity) "
             continue
         if ch == curses.KEY_RESIZE:
             continue

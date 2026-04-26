@@ -145,6 +145,9 @@ def set_state(
     * ``status_changed_at`` is updated only when ``status`` actually changes.
     * ``last_user_prompt_at`` is bumped on each ``working`` write.
     * ``last_assistant_stop_at`` is bumped on each ``waiting`` write.
+    * The user-set ``ignored`` flag clears whenever ``status`` actually
+      changes — once the session becomes active again, the mute should
+      not silently linger.
     """
     if status not in VALID_STATUS:
         raise ValueError(f"invalid status {status!r}; must be one of {VALID_STATUS}")
@@ -165,6 +168,8 @@ def set_state(
 
     if prev_status != status:
         payload["status_changed_at"] = ts
+        # Real status transition — clear any user-set mute.
+        payload.pop("ignored", None)
     else:
         payload.setdefault("status_changed_at", ts)
 
@@ -200,6 +205,25 @@ def reset_all() -> int:
             except OSError:
                 pass
     return removed
+
+
+def set_ignored(session_id: str, ignored: bool = True) -> Optional[Dict[str, Any]]:
+    """Toggle the ``ignored`` flag on an existing state file.
+
+    Returns the updated payload, or ``None`` if the session has no state
+    yet. The flag is consumed automatically the next time the hook detects
+    a real status change (see ``set_state``).
+    """
+    prev = read_state(session_id)
+    if not prev:
+        return None
+    payload = dict(prev)
+    if ignored:
+        payload["ignored"] = True
+    else:
+        payload.pop("ignored", None)
+    _atomic_write_json(state_path(session_id), payload)
+    return payload
 
 
 def cleanup_idle(max_age_seconds: int = 24 * 3600, *, now: Optional[datetime] = None) -> int:
@@ -277,6 +301,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_clean.add_argument(
         "--max-age-hours", type=float, default=24.0, help="Cutoff in hours (default 24)."
     )
+
+    p_mute = sub.add_parser("mute", help="Mark a session as ignored (renders as idle).")
+    p_mute.add_argument("--session", required=True)
+    p_mute.add_argument("--unmute", action="store_true", help="Clear the ignored flag instead.")
     return parser
 
 
@@ -315,6 +343,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             return 2
         n = reset_all()
         print(f"removed {n} state file(s)")
+        return 0
+
+    if args.cmd == "mute":
+        result = set_ignored(args.session, ignored=not args.unmute)
+        if result is None:
+            print(f"no state for session {args.session!r}", file=sys.stderr)
+            return 1
+        _emit(result)
         return 0
 
     if args.cmd == "cleanup":

@@ -123,6 +123,19 @@ class TestDeriveViews(unittest.TestCase):
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].status, render.STATUS_WAITING)
 
+    def test_ignored_flag_renders_as_idle(self) -> None:
+        # User-muted sessions show as idle regardless of underlying status.
+        states = [{
+            "session_id": "x",
+            "status": "waiting",
+            "current_task": "muted ask",
+            "status_changed_at": self.now.isoformat(),
+            "ignored": True,
+        }]
+        view = render.derive_views(states, now=self.now)[0]
+        self.assertEqual(view.status, render.STATUS_IDLE)
+        self.assertEqual(view.raw_status, render.STATUS_WAITING)
+
     def test_old_waiting_escalates_to_idle(self) -> None:
         # Long-untouched waiting sessions fade to idle so the board doesn't
         # stay solid red on stale asks.

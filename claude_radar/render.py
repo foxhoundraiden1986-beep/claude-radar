@@ -202,7 +202,12 @@ def derive_view(
     age = 0 if started is None else max(0, int((now - started).total_seconds()))
 
     status = raw_status
-    if raw_status == STATUS_WORKING and age >= idle_after_seconds:
+    if raw.get("ignored"):
+        # User explicitly muted this session via the dashboard. Honour that
+        # until the next real status change resets the flag (state.set_state
+        # handles the auto-clear).
+        status = STATUS_IDLE
+    elif raw_status == STATUS_WORKING and age >= idle_after_seconds:
         status = STATUS_IDLE
     elif raw_status == STATUS_WAITING and age >= DEFAULT_WAITING_IDLE_AFTER_SECONDS:
         status = STATUS_IDLE
@@ -507,7 +512,7 @@ def render_board_layout(
     # Pad to height-1 then append footer.
     while len(rows) < height - 1:
         rows.append(pad_display("", width))
-    footer = "q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump"
+    footer = "q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute"
     rows.append(pad_display(truncate_display(footer, width), width))
 
     # Final clamp / truncation to exactly `height` rows.
