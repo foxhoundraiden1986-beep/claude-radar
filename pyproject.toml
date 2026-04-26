@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "chengxuelin" },
+    { name = "foxhoundraiden1986-beep" },
 ]
 keywords = ["claude", "claude-code", "tui", "dashboard", "tmux"]
 classifiers = [
@@ -31,8 +31,8 @@ dependencies = []
 dev = []
 
 [project.urls]
-Homepage = "https://github.com/chengxuelin/claude-radar"
-Issues = "https://github.com/chengxuelin/claude-radar/issues"
+Homepage = "https://github.com/foxhoundraiden1986-beep/claude-radar"
+Issues = "https://github.com/foxhoundraiden1986-beep/claude-radar/issues"
 
 [project.scripts]
 claude-radar = "claude_radar.cli:main"

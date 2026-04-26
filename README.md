@@ -45,7 +45,7 @@ dashboard you can leave running in a corner of your tmux layout.
 Clone and run the installer:
 
 ```bash
-git clone https://github.com/chengxuelin/claude-radar.git ~/.claude-radar
+git clone https://github.com/foxhoundraiden1986-beep/claude-radar.git ~/.claude-radar
 bash ~/.claude-radar/install.sh
 ```
 

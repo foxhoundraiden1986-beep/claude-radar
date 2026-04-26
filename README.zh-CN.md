@@ -42,7 +42,7 @@ q quit · r refresh · c cleanup
 克隆仓库，跑安装脚本：
 
 ```bash
-git clone https://github.com/chengxuelin/claude-radar.git ~/.claude-radar
+git clone https://github.com/foxhoundraiden1986-beep/claude-radar.git ~/.claude-radar
 bash ~/.claude-radar/install.sh
 ```
 
