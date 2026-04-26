@@ -47,6 +47,12 @@ _STATUS_RANK = {STATUS_WAITING: 0, STATUS_WORKING: 1, STATUS_IDLE: 2}
 # fade to idle so the user only sees fresh asks at full intensity.
 DEFAULT_WORKING_IDLE_AFTER_SECONDS = 6 * 3600    # 6 h
 DEFAULT_WAITING_IDLE_AFTER_SECONDS = 30 * 60     # 30 min
+# Claude Code can fire a trailing PreToolUse after the final Stop of a
+# turn (sub-agent activity, queued tool calls, etc.), leaving the state
+# stuck on "working" with no event ever flipping it back. If no hook has
+# fired for this long, treat the session as actually waiting regardless
+# of what the on-disk status says.
+DEFAULT_WORKING_STALE_AFTER_SECONDS = 90
 # Backwards-compat alias for callers that pass a single ``idle_after_seconds``.
 # When supplied, it overrides the working threshold (the historical contract).
 DEFAULT_IDLE_AFTER_SECONDS = DEFAULT_WORKING_IDLE_AFTER_SECONDS
@@ -190,6 +196,12 @@ def derive_view(
     The on-disk status is escalated to ``idle`` when ``status_changed_at`` is
     older than ``idle_after_seconds``. ``waiting`` sessions are *not*
     escalated — the user has explicitly been pinged and should stay flagged.
+
+    A ``working`` session whose status_changed_at is more than
+    ``DEFAULT_WORKING_STALE_AFTER_SECONDS`` old is demoted to ``waiting``:
+    Claude Code occasionally fires a trailing PreToolUse after the final
+    Stop of a turn, which would otherwise leave a finished session pinned
+    to ⚡ forever.
     """
     now = _now(now)
     raw_status = str(raw.get("status") or STATUS_IDLE)
@@ -198,29 +210,47 @@ def derive_view(
     sid = str(raw.get("session_id") or "?")
     task = str(raw.get("current_task") or "")
 
-    # For working sessions the "age" we want is "how long has this task been
-    # running" — anchor on task_started_at, which is preserved across the
-    # rapid Stop→PreToolUse→Stop oscillation typical of tool-heavy turns.
-    # For waiting / idle, status_changed_at is the right clock.
-    if raw_status == STATUS_WORKING:
-        started = (
-            _parse_iso(raw.get("task_started_at"))
-            or _parse_iso(raw.get("status_changed_at"))
-        )
-    else:
-        started = _parse_iso(raw.get("status_changed_at"))
-    age = 0 if started is None else max(0, int((now - started).total_seconds()))
+    # activity_age = time since the most recent hook event for this session.
+    # Drives status escalation (working → waiting → idle). Prefer
+    # last_event_at (bumped on every hook write); fall back to
+    # status_changed_at for legacy state files written before we tracked
+    # per-event timestamps.
+    changed_at = _parse_iso(raw.get("status_changed_at"))
+    last_event = _parse_iso(raw.get("last_event_at")) or changed_at
+    activity_age = (
+        0 if last_event is None
+        else max(0, int((now - last_event).total_seconds()))
+    )
 
     status = raw_status
     if raw.get("ignored"):
         # User explicitly muted this session via the dashboard. Honour that
-        # until the next real status change resets the flag (state.set_state
-        # handles the auto-clear).
+        # until a real user prompt clears the flag (state.set_state handles
+        # the auto-clear).
         status = STATUS_IDLE
-    elif raw_status == STATUS_WORKING and age >= idle_after_seconds:
+    elif raw_status == STATUS_WORKING:
+        if activity_age >= idle_after_seconds:
+            status = STATUS_IDLE
+        elif activity_age >= DEFAULT_WORKING_STALE_AFTER_SECONDS:
+            # Demote to waiting; if it sits unanswered long enough, the
+            # waiting → idle rule below will pick it up next refresh.
+            status = STATUS_WAITING
+    if status == STATUS_WAITING and activity_age >= DEFAULT_WAITING_IDLE_AFTER_SECONDS:
         status = STATUS_IDLE
-    elif raw_status == STATUS_WAITING and age >= DEFAULT_WAITING_IDLE_AFTER_SECONDS:
-        status = STATUS_IDLE
+
+    # Display age — for sessions still considered actively working, anchor
+    # on task_started_at so the column tracks "how long has this task been
+    # running" across PreToolUse oscillation. Otherwise show time since
+    # the last hook event, which for a real waiting session is the last
+    # Stop and for a demoted session is the trailing PreToolUse.
+    if status == STATUS_WORKING:
+        started = (
+            _parse_iso(raw.get("task_started_at"))
+            or last_event
+        )
+    else:
+        started = last_event
+    age = 0 if started is None else max(0, int((now - started).total_seconds()))
     tmux = raw.get("tmux_session")
     tmux = str(tmux) if tmux else None
     return SessionView(

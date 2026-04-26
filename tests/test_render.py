@@ -20,15 +20,28 @@ def _state(
     *,
     task: str = "",
     minutes_ago: int = 0,
+    activity_minutes_ago: int | None = None,
     now: datetime,
 ) -> dict:
-    """Helper: build a state dict whose status_changed_at is ``minutes_ago``."""
-    ts = (now - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+    """Helper: build a state dict.
+
+    ``minutes_ago`` controls ``task_started_at`` (when the user submitted
+    the prompt). ``activity_minutes_ago`` controls ``status_changed_at``
+    (time of the most recent hook event). Defaults to the same value, so
+    legacy callers still work; pass ``activity_minutes_ago=0`` to
+    simulate a long-running working session whose PreToolUse oscillation
+    keeps the activity clock fresh.
+    """
+    if activity_minutes_ago is None:
+        activity_minutes_ago = minutes_ago
+    started = (now - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+    activity = (now - timedelta(minutes=activity_minutes_ago)).isoformat(timespec="seconds")
     return {
         "session_id": sid,
         "status": status,
         "current_task": task,
-        "status_changed_at": ts,
+        "status_changed_at": activity,
+        "task_started_at": started,
     }
 
 
@@ -93,7 +106,7 @@ class TestDeriveViews(unittest.TestCase):
 
     def test_sort_waiting_before_working_before_idle(self) -> None:
         states = [
-            _state("dev", "working", task="refactor", minutes_ago=41, now=self.now),
+            _state("dev", "working", task="refactor", minutes_ago=1, now=self.now),
             _state("review", "waiting", task="review", minutes_ago=2, now=self.now),
             _state("idle1", "idle", minutes_ago=120, now=self.now),
         ]
@@ -122,6 +135,28 @@ class TestDeriveViews(unittest.TestCase):
         states = [_state("recent", "waiting", minutes_ago=5, now=self.now)]
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].status, render.STATUS_WAITING)
+
+    def test_stale_working_demotes_to_waiting(self) -> None:
+        # Claude Code sometimes fires a trailing PreToolUse after the final
+        # Stop, leaving status pinned to working with no event after to flip
+        # it back. After enough silence, treat it as waiting.
+        states = [
+            _state("zombie", "working", task="t", minutes_ago=5,
+                   activity_minutes_ago=5, now=self.now),
+        ]
+        views = render.derive_views(states, now=self.now)
+        self.assertEqual(views[0].status, render.STATUS_WAITING)
+        self.assertEqual(views[0].raw_status, render.STATUS_WORKING)
+
+    def test_active_working_does_not_demote(self) -> None:
+        # A working session whose PreToolUse oscillation keeps the activity
+        # clock fresh stays ⚡, even if the underlying task is hours old.
+        states = [
+            _state("busy", "working", task="t", minutes_ago=120,
+                   activity_minutes_ago=0, now=self.now),
+        ]
+        views = render.derive_views(states, now=self.now)
+        self.assertEqual(views[0].status, render.STATUS_WORKING)
 
     def test_ignored_flag_renders_as_idle(self) -> None:
         # User-muted sessions show as idle regardless of underlying status.
@@ -249,7 +284,8 @@ class TestRenderCompact(unittest.TestCase):
     def test_verbose_lists_sessions(self) -> None:
         states = [
             _state("data", "waiting", task="解析日志", minutes_ago=13, now=self.now),
-            _state("dev", "working", task="重构缓存层", minutes_ago=41, now=self.now),
+            _state("dev", "working", task="重构缓存层", minutes_ago=41,
+                   activity_minutes_ago=0, now=self.now),
         ]
         out = render.render_compact(states, now=self.now, verbose=True)
         self.assertIn("data:", out)
@@ -289,7 +325,8 @@ class TestRenderBoard(unittest.TestCase):
     def test_board_contains_session_ids(self) -> None:
         states = [
             _state("data-analysis", "waiting", task="解析日志", minutes_ago=13, now=self.now),
-            _state("dev", "working", task="重构缓存层", minutes_ago=41, now=self.now),
+            _state("dev", "working", task="重构缓存层", minutes_ago=41,
+                   activity_minutes_ago=0, now=self.now),
             _state("review", "idle", minutes_ago=200, now=self.now),
         ]
         lines = render.render_board(states, width=60, height=10, now=self.now)

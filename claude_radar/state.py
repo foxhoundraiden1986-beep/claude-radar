@@ -144,6 +144,9 @@ def set_state(
       previous status was not ``working``; otherwise the existing value is
       kept.
     * ``status_changed_at`` is updated only when ``status`` actually changes.
+    * ``last_event_at`` is bumped on every write. The renderer uses this
+      to tell apart a stuck-on-working session (no events) from one
+      that's still oscillating Stop↔PreToolUse during real tool use.
     * ``last_user_prompt_at`` is bumped on each ``working`` write.
     * ``last_assistant_stop_at`` is bumped on each ``waiting`` write.
     * The user-set ``ignored`` flag clears only on a real user prompt
@@ -178,6 +181,10 @@ def set_state(
         payload["status_changed_at"] = ts
     else:
         payload.setdefault("status_changed_at", ts)
+    # last_event_at bumps on every hook write regardless of transition.
+    # The renderer uses it to detect a session that's gone genuinely
+    # silent (no events) vs. one that's still actively oscillating.
+    payload["last_event_at"] = ts
 
     if status == "working":
         if via_tool:
