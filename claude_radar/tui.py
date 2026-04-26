@@ -49,6 +49,7 @@ _PAIR_IDLE = 3
 _PAIR_CHROME = 4   # rounded box, separator
 _PAIR_HEADER = 5   # column header (session/task/age)
 _PAIR_SELECTED = 6  # selection background
+_PAIR_ACTIVE = 7   # the session id of the row matching the focused tmux client
 
 
 def _color_for(status: str) -> int:
@@ -89,6 +90,7 @@ def _init_colors() -> None:
         c_header = 248    # light grey — column header text
         c_sel_bg = 24     # deep teal background — selection
         c_sel_fg = 231    # off-white foreground — selection
+        c_active = 120    # bright green — focused tmux session marker
     else:
         c_waiting = curses.COLOR_YELLOW
         c_working = curses.COLOR_CYAN
@@ -97,6 +99,7 @@ def _init_colors() -> None:
         c_header = curses.COLOR_WHITE
         c_sel_bg = curses.COLOR_BLUE
         c_sel_fg = curses.COLOR_WHITE
+        c_active = curses.COLOR_GREEN
 
     curses.init_pair(_PAIR_WAITING, c_waiting, bg)
     curses.init_pair(_PAIR_WORKING, c_working, bg)
@@ -104,6 +107,7 @@ def _init_colors() -> None:
     curses.init_pair(_PAIR_CHROME, c_chrome, bg)
     curses.init_pair(_PAIR_HEADER, c_header, bg)
     curses.init_pair(_PAIR_SELECTED, c_sel_fg, c_sel_bg)
+    curses.init_pair(_PAIR_ACTIVE, c_active, bg)
 
 
 def _selection_attr(base_attr: int) -> int:
@@ -144,6 +148,8 @@ def _draw(
     _safe_addstr(stdscr, 1, 0, rows[1], header_attr)
     _safe_addstr(stdscr, 2, 0, rows[2], chrome_attr | curses.A_DIM)
     focused = _focused_tmux_session()
+    name_width, _ = render.board_column_widths(width)
+    name_col_start = 5  # cursor(1) + emoji(2) + gap(2) — see render._board_view_lines
     body_start = layout.body_start
     body_rows = rows[body_start : -1]
     prev_owner: Optional[int] = None
@@ -155,17 +161,24 @@ def _draw(
             is_selected = owner == selected_index
             is_focused = focused is not None and view.tmux_session == focused
             attr = _selection_attr(base) if is_selected else base
-            if is_focused:
-                # Make the row the user is actually attached to obvious — bold
-                # + underline reads on top of the status color and on top of
-                # the selection background.
-                attr |= curses.A_BOLD | curses.A_UNDERLINE
         else:
+            view = None
             base = 0
             is_selected = False
             is_focused = False
             attr = 0
         _safe_addstr(stdscr, body_start + i, 0, row, attr)
+        # Highlight the session_id cell of the focused row in green so the
+        # row matching the user's foreground tmux client pops without
+        # competing with selection's reverse-video background.
+        if is_focused and owner is not None and owner != prev_owner and curses.has_colors():
+            try:
+                stdscr.chgat(
+                    body_start + i, name_col_start, name_width,
+                    curses.color_pair(_PAIR_ACTIVE) | curses.A_BOLD,
+                )
+            except curses.error:
+                pass
         # Cursor marker on the selected view's head row (first row of group).
         if is_selected and owner != prev_owner:
             cursor_attr = (attr | curses.A_BOLD) if curses.has_colors() else curses.A_BOLD | curses.A_REVERSE
