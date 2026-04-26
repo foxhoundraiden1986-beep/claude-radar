@@ -72,7 +72,7 @@ class TestDisplayWidth(unittest.TestCase):
         self.assertLessEqual(render._display_width(out), 8)
 
     def test_truncate_cjk(self) -> None:
-        out = render.truncate_display("线下新客归因分析", 6)
+        out = render.truncate_display("中文测试任务名称", 6)
         # Each CJK char is 2 cells wide. 6 cells = 2 chars + ellipsis.
         self.assertLessEqual(render._display_width(out), 6)
         self.assertTrue(out.endswith("…"))
@@ -165,7 +165,7 @@ class TestDeriveViews(unittest.TestCase):
         self.assertGreater(len(owners), 1, "long task should produce >1 body row for view 0")
 
     def test_cjk_task_wraps_safely(self) -> None:
-        cjk = "线下新客归因分析" * 6  # ~96 cells, will wrap
+        cjk = "中文测试任务名称" * 6  # ~96 cells, will wrap
         states = [_state("data", "working", task=cjk, minutes_ago=1, now=self.now)]
         layout = render.render_board_layout(states, width=60, height=24, now=self.now)
         owners_for_view0 = [o for o in layout.body_owners if o == 0]
@@ -248,8 +248,8 @@ class TestRenderCompact(unittest.TestCase):
 
     def test_verbose_lists_sessions(self) -> None:
         states = [
-            _state("data", "waiting", task="归因分析", minutes_ago=13, now=self.now),
-            _state("dev", "working", task="重构 report_utils", minutes_ago=41, now=self.now),
+            _state("data", "waiting", task="解析日志", minutes_ago=13, now=self.now),
+            _state("dev", "working", task="重构缓存层", minutes_ago=41, now=self.now),
         ]
         out = render.render_compact(states, now=self.now, verbose=True)
         self.assertIn("data:", out)
@@ -288,8 +288,8 @@ class TestRenderBoard(unittest.TestCase):
 
     def test_board_contains_session_ids(self) -> None:
         states = [
-            _state("data-analysis", "waiting", task="归因分析", minutes_ago=13, now=self.now),
-            _state("dev", "working", task="重构 report_utils", minutes_ago=41, now=self.now),
+            _state("data-analysis", "waiting", task="解析日志", minutes_ago=13, now=self.now),
+            _state("dev", "working", task="重构缓存层", minutes_ago=41, now=self.now),
             _state("review", "idle", minutes_ago=200, now=self.now),
         ]
         lines = render.render_board(states, width=60, height=10, now=self.now)

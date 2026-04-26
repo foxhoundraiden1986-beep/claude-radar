@@ -62,7 +62,7 @@ class TestStatusCli(CliTestBase):
 
 class TestRadarCli(CliTestBase):
     def test_once_snapshot_lists_sessions(self) -> None:
-        state.set_state("data", "waiting", task="归因分析")
+        state.set_state("data", "waiting", task="解析日志")
         out = self._capture(cli.main, "--once")
         self.assertIn("data", out)
         self.assertIn("Claude Sessions", out)

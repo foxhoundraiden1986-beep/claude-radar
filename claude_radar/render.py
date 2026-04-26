@@ -256,7 +256,7 @@ def render_compact(
     """Return a one-line summary suitable for a tmux statusline.
 
     Default (compact) form, e.g. ``💬2 ⚡1 ○1``. ``verbose=True`` lists each
-    session with its task and age, e.g. ``💬 data:归因 13m | ⚡ dev:重构 41m``.
+    session with its task and age, e.g. ``💬 data:parse 13m | ⚡ dev:refactor 41m``.
     """
     views = derive_views(raw_states, now=now, idle_after_seconds=idle_after_seconds)
     if not views:

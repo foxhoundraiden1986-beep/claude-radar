@@ -9,8 +9,8 @@
      session             task                              age
 ─────────────────────────────────────────────────────────────
  💬  meta                window-manager design                5m
-▶💬  data-analysis       attribution debug                   13m
- ⚡  dev                 refactor report_utils               41m
+▶💬  data-analysis       parser benchmark                    13m
+ ⚡  dev                 refactor cache layer                41m
  ○   review              -
 
 q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
@@ -115,7 +115,7 @@ $ claude-radar-status
 💬2 ⚡1 ○1
 
 $ claude-radar-status --verbose
-💬 data:归因 13m | 💬 meta:讨论 5m | ⚡ dev:重构 41m
+💬 data:parse 13m | 💬 meta:design 5m | ⚡ dev:refactor 41m
 ```
 
 ### 接入 tmux
