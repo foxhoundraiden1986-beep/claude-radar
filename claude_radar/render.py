@@ -295,6 +295,20 @@ def _emoji_cell(status: str, slot_width: int = 2) -> str:
     return pad_display(e, slot_width)
 
 
+def _format_status_counts(views: Sequence[SessionView]) -> str:
+    """Format ``views`` as ``💬N ⚡N ○N`` (only non-zero buckets)."""
+    if not views:
+        return ""
+    counts = {STATUS_WAITING: 0, STATUS_WORKING: 0, STATUS_IDLE: 0}
+    for v in views:
+        counts[v.status] = counts.get(v.status, 0) + 1
+    parts = []
+    for st in (STATUS_WAITING, STATUS_WORKING, STATUS_IDLE):
+        if counts.get(st):
+            parts.append(f"{EMOJI[st]}{counts[st]}")
+    return " ".join(parts)
+
+
 def _wrap_to_width(text: str, width: int) -> List[str]:
     """Break text into chunks each at most ``width`` display cells (CJK-safe).
 
@@ -331,13 +345,15 @@ def _wrap_to_width(text: str, width: int) -> List[str]:
 def board_column_widths(width: int) -> Tuple[int, int]:
     """Return (name_width, task_width) for a given total board width.
 
-    Public helper so the TUI can compute the same wrapping as render_board
-    when working out which body rows belong to a given view.
+    Layout per body row: ``emoji(2)  name  task  age(6)`` — three 2-cell
+    gaps, so the fixed overhead is 2 + 2*3 + 6 = 14 cells. The col header
+    uses the same numbers so columns line up cell-for-cell.
     """
-    emoji_slot = 3
-    age_slot = 6
+    emoji_slot = 2
     gap = 2
-    avail = max(10, width) - emoji_slot - age_slot - 2 * gap
+    age_slot = 6
+    fixed = emoji_slot + 3 * gap + age_slot  # = 14
+    avail = max(10, width) - fixed
     if avail < 10:
         avail = max(10, width - 6)
     name_width = max(6, min(18, avail // 3))
@@ -406,26 +422,38 @@ def render_board_layout(
     now = _now(now)
     views = derive_views(raw_states, now=now, idle_after_seconds=idle_after_seconds)
 
-    # Header: "─ <title> ─...─ HH:MM ─" sized to exactly ``width`` cells.
-    #   leading "─" (1) + inner (N) + dashes (D) + " " (1) + clock (C) +
-    #   " " (1) + trailing "─" (1) = width
-    # → D = width - N - C - 4
+    # Header layout (with status counts when there are sessions):
+    #   ╭─ <title> ──── 💬N ⚡N ○N ──── HH:MM ─╮
+    # When no sessions exist, the counts block is omitted:
+    #   ╭─ <title> ─────────────────────── HH:MM ─╮
     clock = now.strftime("%H:%M")
-    header_inner = f" {title} "
-    inner_w = _display_width(header_inner)
-    clock_w = _display_width(clock)
-    dashes = max(1, width - inner_w - clock_w - 4)
-    header = f"─{header_inner}{'─' * dashes} {clock} ─"
+    counts_text = _format_status_counts(views)
+    inner_left = f" {title} "
+    inner_right = f" {clock} "
+    left_w = _display_width(inner_left)
+    right_w = _display_width(inner_right)
+    if counts_text:
+        center = f" {counts_text} "
+        center_w = _display_width(center)
+        dashes_total = max(4, width - left_w - center_w - right_w - 4)
+        dashes_left = dashes_total // 2
+        dashes_right = dashes_total - dashes_left
+        header = (
+            f"╭{'─'}{inner_left}{'─' * dashes_left}"
+            f"{center}{'─' * dashes_right}{inner_right}{'─'}╮"
+        )
+    else:
+        dashes = max(2, width - left_w - right_w - 4)
+        header = f"╭{'─'}{inner_left}{'─' * dashes}{inner_right}{'─'}╮"
     header = truncate_display(header, width)
     header = pad_display(header, width)
 
-    # Column-header layout. Body rows have an emoji slot (2 cells) + 2-space
-    # gap (= 4 cells of left margin); the header uses 4 spaces to line up.
+    # Column header — exact 4-space left margin (emoji slot + first gap),
+    # then session/task/age aligned cell-for-cell with body rows.
     name_width, task_width = board_column_widths(width)
     emoji_slot = 2
     gap = 2
     age_slot = 6
-
     col_header = (
         " " * (emoji_slot + gap)
         + pad_display("session", name_width)
