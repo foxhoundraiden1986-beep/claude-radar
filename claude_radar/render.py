@@ -52,7 +52,19 @@ DEFAULT_WAITING_IDLE_AFTER_SECONDS = 30 * 60     # 30 min
 # stuck on "working" with no event ever flipping it back. If no hook has
 # fired for this long, treat the session as actually waiting regardless
 # of what the on-disk status says.
-DEFAULT_WORKING_STALE_AFTER_SECONDS = 90
+#
+# Threshold must be larger than the longest realistic single-event
+# silence in normal workflow, otherwise we'd misfire on slow operations
+# that legitimately produce no hooks. Cases that hit this:
+#   * extended thinking (`think_budget` can sit on a turn for 1-3 min
+#     with zero tools)
+#   * a single long tool call — pytest on a big suite, WebSearch /
+#     WebFetch, slow MCP round-trips, large Bash commands
+#     (PreToolUse fires once at the start, then nothing until Stop)
+# 5 minutes leaves comfortable headroom for those while still recovering
+# the trailing-PreToolUse-after-Stop case in well under the 30 min
+# waiting → idle horizon.
+DEFAULT_WORKING_STALE_AFTER_SECONDS = 5 * 60
 # Backwards-compat alias for callers that pass a single ``idle_after_seconds``.
 # When supplied, it overrides the working threshold (the historical contract).
 DEFAULT_IDLE_AFTER_SECONDS = DEFAULT_WORKING_IDLE_AFTER_SECONDS
@@ -193,11 +205,13 @@ def derive_view(
 ) -> SessionView:
     """Build a ``SessionView`` from one raw state dict.
 
-    The on-disk status is escalated to ``idle`` when ``status_changed_at`` is
+    The on-disk status is escalated to ``idle`` when ``last_event_at`` is
     older than ``idle_after_seconds``. ``waiting`` sessions are *not*
-    escalated — the user has explicitly been pinged and should stay flagged.
+    escalated against the same threshold — the user has explicitly been
+    pinged and should stay flagged — but they DO escalate to idle once
+    they exceed ``DEFAULT_WAITING_IDLE_AFTER_SECONDS``.
 
-    A ``working`` session whose status_changed_at is more than
+    A ``working`` session whose ``last_event_at`` is more than
     ``DEFAULT_WORKING_STALE_AFTER_SECONDS`` old is demoted to ``waiting``:
     Claude Code occasionally fires a trailing PreToolUse after the final
     Stop of a turn, which would otherwise leave a finished session pinned
@@ -214,7 +228,10 @@ def derive_view(
     # Drives status escalation (working → waiting → idle). Prefer
     # last_event_at (bumped on every hook write); fall back to
     # status_changed_at for legacy state files written before we tracked
-    # per-event timestamps.
+    # per-event timestamps. On the first read post-upgrade, any working
+    # session left over from the old code will demote/idle within one
+    # tick — intentional, since by definition it's been stuck longer
+    # than the threshold.
     changed_at = _parse_iso(raw.get("status_changed_at"))
     last_event = _parse_iso(raw.get("last_event_at")) or changed_at
     activity_age = (
@@ -222,6 +239,12 @@ def derive_view(
         else max(0, int((now - last_event).total_seconds()))
     )
 
+    # Status escalation flow:
+    #   working → waiting   after DEFAULT_WORKING_STALE_AFTER_SECONDS
+    #   waiting → idle      after DEFAULT_WAITING_IDLE_AFTER_SECONDS
+    # idle_after_seconds is preserved as a hard cap — callers can pass a
+    # value smaller than the soft thresholds above to short-circuit
+    # straight to idle (used by some tests).
     status = raw_status
     if raw.get("ignored"):
         # User explicitly muted this session via the dashboard. Honour that
@@ -232,8 +255,6 @@ def derive_view(
         if activity_age >= idle_after_seconds:
             status = STATUS_IDLE
         elif activity_age >= DEFAULT_WORKING_STALE_AFTER_SECONDS:
-            # Demote to waiting; if it sits unanswered long enough, the
-            # waiting → idle rule below will pick it up next refresh.
             status = STATUS_WAITING
     if status == STATUS_WAITING and activity_age >= DEFAULT_WAITING_IDLE_AFTER_SECONDS:
         status = STATUS_IDLE

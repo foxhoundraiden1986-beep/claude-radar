@@ -141,8 +141,8 @@ class TestDeriveViews(unittest.TestCase):
         # Stop, leaving status pinned to working with no event after to flip
         # it back. After enough silence, treat it as waiting.
         states = [
-            _state("zombie", "working", task="t", minutes_ago=5,
-                   activity_minutes_ago=5, now=self.now),
+            _state("zombie", "working", task="t", minutes_ago=10,
+                   activity_minutes_ago=10, now=self.now),
         ]
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].status, render.STATUS_WAITING)
@@ -157,6 +157,38 @@ class TestDeriveViews(unittest.TestCase):
         ]
         views = render.derive_views(states, now=self.now)
         self.assertEqual(views[0].status, render.STATUS_WORKING)
+
+    def test_working_just_under_threshold_stays_working(self) -> None:
+        # Lock the soft-cap boundary. Threshold is 5 min; 4m59s must NOT
+        # demote (otherwise a slow Bash / WebFetch / extended-thinking turn
+        # would silently fall off the dashboard mid-task).
+        seconds_under = render.DEFAULT_WORKING_STALE_AFTER_SECONDS - 1
+        raw = {
+            "session_id": "barely",
+            "status": "working",
+            "current_task": "t",
+            "status_changed_at": self.now.isoformat(timespec="seconds"),
+            "task_started_at": self.now.isoformat(timespec="seconds"),
+            "last_event_at": (self.now - timedelta(seconds=seconds_under))
+                .isoformat(timespec="seconds"),
+        }
+        view = render.derive_view(raw, now=self.now)
+        self.assertEqual(view.status, render.STATUS_WORKING)
+
+    def test_working_just_over_threshold_demotes(self) -> None:
+        # Symmetric boundary check at threshold + 1.
+        seconds_over = render.DEFAULT_WORKING_STALE_AFTER_SECONDS + 1
+        raw = {
+            "session_id": "stuck",
+            "status": "working",
+            "current_task": "t",
+            "status_changed_at": self.now.isoformat(timespec="seconds"),
+            "task_started_at": self.now.isoformat(timespec="seconds"),
+            "last_event_at": (self.now - timedelta(seconds=seconds_over))
+                .isoformat(timespec="seconds"),
+        }
+        view = render.derive_view(raw, now=self.now)
+        self.assertEqual(view.status, render.STATUS_WAITING)
 
     def test_ignored_flag_renders_as_idle(self) -> None:
         # User-muted sessions show as idle regardless of underlying status.
