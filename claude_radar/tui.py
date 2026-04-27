@@ -9,11 +9,12 @@ drawing and key bindings.
 Key bindings:
     q, Q, Esc      quit
     r, R           refresh immediately
-    c, C           cleanup state files older than 24h
     ↑/k, ↓/j       move selection
     ⏎ / Enter      jump to selected tmux session (switch-client / attach hint)
     i, I           mute (toggle): render selected session as idle until its
                    real status changes again
+    x, X           forget the selected session — remove its state file. The
+                   row reappears the moment a hook fires for that session.
 """
 
 from __future__ import annotations
@@ -353,10 +354,6 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
             return
         if ch in (ord("r"), ord("R")):
             continue  # falls through to redraw
-        if ch in (ord("c"), ord("C")):
-            removed = state.cleanup_idle(max_age_seconds=24 * 3600)
-            status_msg = f" cleaned up {removed} idle session(s) "
-            continue
         if ch in (curses.KEY_UP, ord("k")):
             if n:
                 selected_index = (selected_index - 1) % n
@@ -378,6 +375,16 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
                 else:
                     state.set_ignored(v.session_id, True)
                     status_msg = f" muted {v.session_id} (resets on next activity) "
+            continue
+        if ch in (ord("x"), ord("X")):
+            if n:
+                v = views[selected_index]
+                path = state.state_path(v.session_id)
+                try:
+                    path.unlink()
+                    status_msg = f" forgot {v.session_id} "
+                except FileNotFoundError:
+                    status_msg = f" {v.session_id} already gone "
             continue
         if ch == curses.KEY_RESIZE:
             # Tell curses about the new terminal dimensions, then force

@@ -13,7 +13,7 @@
  ⚡  dev                 refactor cache layer                41m
  ○   review              -
 
-q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
+q quit · r refresh · ↑↓ select · ⏎ jump · i mute · x forget
 ```
 
 `💬` 等你回复 · `⚡` Claude 正在跑 · `○` 闲置  
@@ -94,18 +94,18 @@ claude-radar
 | ------------------ | ----------------------------------------------------- |
 | `q`、`Esc`         | 退出                                                  |
 | `r`                | 立即刷新                                              |
-| `c`                | 清掉超过 24 小时没活动的 state 文件                   |
 | `↑` `↓` / `k` `j`  | 移动选中光标                                          |
 | `⏎` Enter          | 跳转到选中的 tmux session（在 tmux 内调 `switch-client`；看板跑在 tmux 外时通过 osascript 弹 Terminal/iTerm 新窗口） |
 | `i`                | 静音选中 session — 显示为 idle，直到它真实状态再次变化时自动解除 |
+| `x`                | 忘掉选中 session — 删它的 state 文件。下次该 session 有 hook 触发会重新出现 |
 
-某个 session 卡住了（被 `kill -9` 之类，`Stop` hook 没触发到）？看板里按
-`c` 即可；命令行里也可以：
+看板**不会**自己清任何东西：你看过一次的 session 会一直显示，直到你显式
+忘掉（TUI 里 `x`，或命令行 `claude-radar --forget <session>`）。彻底重置：
 
 ```bash
-claude-radar --reset      # 删掉所有 state 文件
-claude-radar --cleanup    # 只删超过 24 小时的
-claude-radar --once       # 输出一帧到 stdout，不开 curses（适合 CI）
+claude-radar --reset                  # 删掉所有 state 文件
+claude-radar --forget <session-id>    # 单删一行
+claude-radar --once                   # 输出一帧到 stdout，不开 curses（适合 CI）
 ```
 
 ### 一次性输出（给 tmux statusline / 提示符 / 脚本用）

@@ -73,10 +73,17 @@ class TestRadarCli(CliTestBase):
         self.assertIn("removed", out)
         self.assertEqual(state.list_states(), [])
 
-    def test_cleanup_runs(self) -> None:
-        state.set_state("a", "waiting")
-        out = self._capture(cli.main, "--cleanup")
-        self.assertIn("idle state file", out)
+    def test_forget_removes_one_session(self) -> None:
+        state.set_state("alpha", "waiting")
+        state.set_state("beta", "waiting")
+        out = self._capture(cli.main, "--forget", "alpha")
+        self.assertIn("forgot alpha", out)
+        ids = [s["session_id"] for s in state.list_states()]
+        self.assertEqual(ids, ["beta"])
+
+    def test_forget_unknown_session_returns_1(self) -> None:
+        rc = cli.main(["--forget", "ghost"])
+        self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

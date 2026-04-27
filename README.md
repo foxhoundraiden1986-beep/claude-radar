@@ -15,7 +15,7 @@
  ⚡  dev                 refactor cache layer                41m
  ○   review              -
 
-q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute
+q quit · r refresh · ↑↓ select · ⏎ jump · i mute · x forget
 ```
 
 `💬` waiting on you · `⚡` Claude is working · `○` idle  
@@ -100,18 +100,19 @@ Opens a full-screen curses dashboard that refreshes every two seconds.
 | ------------------ | ----------------------------------------------------- |
 | `q`, `Esc`         | quit                                                  |
 | `r`                | refresh immediately                                   |
-| `c`                | delete state files older than 24h                     |
 | `↑` `↓` / `k` `j`  | move the selection cursor                             |
 | `⏎` Enter          | jump to the selected tmux session (`switch-client` inside tmux; opens a new Terminal/iTerm window via osascript when the dashboard runs outside tmux) |
 | `i`                | mute the selected session — render it as idle until its real status changes |
+| `x`                | forget the selected session — remove its state file. The row reappears the moment a hook fires for that session. |
 
-Need to recover from a stuck session (Claude got `kill -9`'d, hooks never
-fired `Stop`)? Either press `c` inside the TUI, or run:
+The board never prunes anything on its own — every session you've ever
+seen stays visible until you explicitly forget it (`x` in the TUI, or
+`claude-radar --forget <session>` from the shell). To wipe everything:
 
 ```bash
-claude-radar --reset      # nuke all state files
-claude-radar --cleanup    # only the >24h-stale ones
-claude-radar --once       # one snapshot to stdout, no curses (good for CI)
+claude-radar --reset                  # nuke all state files
+claude-radar --forget <session-id>    # remove a single session's row
+claude-radar --once                   # one snapshot to stdout, no curses (good for CI)
 ```
 
 ### One-shot status (for tmux statusline, prompts, scripts)

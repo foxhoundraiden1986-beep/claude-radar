@@ -36,9 +36,10 @@ def _build_radar_parser() -> argparse.ArgumentParser:
         help="Delete every state file and exit (use to recover from stuck sessions).",
     )
     parser.add_argument(
-        "--cleanup",
-        action="store_true",
-        help="Delete idle state files (>24h since last update) and exit.",
+        "--forget",
+        metavar="SESSION",
+        default=None,
+        help="Delete the state file for a single session and exit.",
     )
     parser.add_argument(
         "--once",
@@ -59,9 +60,13 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         n = state.reset_all()
         print(f"removed {n} state file(s)")
         return 0
-    if args.cleanup:
-        n = state.cleanup_idle(max_age_seconds=24 * 3600)
-        print(f"removed {n} idle state file(s)")
+    if args.forget:
+        path = state.state_path(args.forget)
+        if not path.exists():
+            print(f"no state for session {args.forget!r}", file=sys.stderr)
+            return 1
+        path.unlink()
+        print(f"forgot {args.forget}")
         return 0
     if args.once:
         rows = render.render_board(state.list_states(), width=80, height=20)

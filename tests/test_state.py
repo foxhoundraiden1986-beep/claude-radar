@@ -7,7 +7,6 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Make the package importable when running from the repo root.
@@ -214,15 +213,13 @@ class TestResetAndCleanup(StateTestBase):
         self.assertEqual(n, 2)
         self.assertEqual(state.list_states(), [])
 
-    def test_cleanup_removes_old_idle(self) -> None:
-        long_ago = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat(timespec="seconds")
-        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(timespec="seconds")
-        state.set_state("old", "waiting", timestamp=long_ago)
-        state.set_state("new", "waiting", timestamp=recent)
-        n = state.cleanup_idle(max_age_seconds=24 * 3600)
-        self.assertEqual(n, 1)
+    def test_forget_removes_one_session(self) -> None:
+        state.set_state("alpha", "waiting")
+        state.set_state("beta", "waiting")
+        path = state.state_path("alpha")
+        path.unlink()
         ids = [s["session_id"] for s in state.list_states()]
-        self.assertEqual(ids, ["new"])
+        self.assertEqual(ids, ["beta"])
 
 
 class TestCLI(StateTestBase):

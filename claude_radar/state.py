@@ -248,45 +248,6 @@ def set_ignored(session_id: str, ignored: bool = True) -> Optional[Dict[str, Any
     return payload
 
 
-def cleanup_idle(max_age_seconds: int = 24 * 3600, *, now: Optional[datetime] = None) -> int:
-    """Delete state files whose ``status_changed_at`` is older than the cutoff.
-
-    Returns the number of files removed. Files that are unparseable or that
-    lack a usable timestamp are left untouched.
-    """
-    d = state_dir()
-    if not d.exists():
-        return 0
-    if now is None:
-        now = datetime.now(timezone.utc).astimezone()
-    removed = 0
-    for child in d.iterdir():
-        if not (child.is_file() and child.name.endswith(".json")):
-            continue
-        try:
-            with child.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            continue
-        ts = data.get("status_changed_at") if isinstance(data, dict) else None
-        if not ts:
-            continue
-        try:
-            then = datetime.fromisoformat(ts)
-        except ValueError:
-            continue
-        if then.tzinfo is None:
-            then = then.replace(tzinfo=timezone.utc)
-        age = (now - then).total_seconds()
-        if age >= max_age_seconds:
-            try:
-                child.unlink()
-                removed += 1
-            except OSError:
-                pass
-    return removed
-
-
 # ---------- CLI -------------------------------------------------------------
 
 
@@ -324,10 +285,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reset = sub.add_parser("reset", help="Delete all state files.")
     p_reset.add_argument("--yes", action="store_true", help="Skip confirmation.")
 
-    p_clean = sub.add_parser("cleanup", help="Delete idle state files.")
-    p_clean.add_argument(
-        "--max-age-hours", type=float, default=24.0, help="Cutoff in hours (default 24)."
+    p_forget = sub.add_parser(
+        "forget", help="Delete the state file for a single session."
     )
+    p_forget.add_argument("--session", required=True)
 
     p_mute = sub.add_parser("mute", help="Mark a session as ignored (renders as idle).")
     p_mute.add_argument("--session", required=True)
@@ -381,9 +342,13 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         _emit(result)
         return 0
 
-    if args.cmd == "cleanup":
-        n = cleanup_idle(int(args.max_age_hours * 3600))
-        print(f"removed {n} idle state file(s)")
+    if args.cmd == "forget":
+        path = state_path(args.session)
+        if not path.exists():
+            print(f"no state for session {args.session!r}", file=sys.stderr)
+            return 1
+        path.unlink()
+        print(f"forgot {args.session}")
         return 0
 
     parser.error(f"unknown command {args.cmd!r}")

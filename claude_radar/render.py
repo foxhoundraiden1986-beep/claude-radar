@@ -610,7 +610,7 @@ def render_board_layout(
     # Pad to height-1 then append footer.
     while len(rows) < height - 1:
         rows.append(pad_display("", width))
-    footer = "q quit · r refresh · c cleanup · ↑↓ select · ⏎ jump · i mute"
+    footer = "q quit · r refresh · ↑↓ select · ⏎ jump · i mute · x forget"
     rows.append(pad_display(truncate_display(footer, width), width))
 
     # Final clamp / truncation to exactly `height` rows.
