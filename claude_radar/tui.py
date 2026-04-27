@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from . import render, state
 
@@ -119,14 +119,25 @@ def _selection_attr(base_attr: int) -> int:
     return base_attr | curses.A_REVERSE
 
 
+_last_size: Tuple[int, int] = (0, 0)
+
+
 def _draw(
     stdscr: "curses._CursesWindow",
     *,
     status_msg: str = "",
     selected_index: int = 0,
 ) -> List["render.SessionView"]:
-    stdscr.erase()
+    global _last_size
     height, width = stdscr.getmaxyx()
+    # Detect missed resize events (some terminals don't emit KEY_RESIZE
+    # reliably). On any size change, do a full clear + repaint so stale
+    # cells from the previous viewport don't leak through.
+    if (height, width) != _last_size:
+        stdscr.clear()
+        _last_size = (height, width)
+    else:
+        stdscr.erase()
     raw_states = state.list_states()
     now = datetime.now(timezone.utc).astimezone()
     layout = render.render_board_layout(
@@ -369,6 +380,16 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
                     status_msg = f" muted {v.session_id} (resets on next activity) "
             continue
         if ch == curses.KEY_RESIZE:
+            # Tell curses about the new terminal dimensions, then force
+            # a full repaint. Without this, getmaxyx() keeps returning
+            # the pre-resize size, and stale chrome from the previous
+            # size leaks into the now-larger viewport (visible as a
+            # ghost copy of the status counts and clock).
+            try:
+                curses.update_lines_cols()
+            except (AttributeError, curses.error):
+                pass
+            stdscr.clear()
             continue
         # any other key: just refresh on next tick
 
