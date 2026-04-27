@@ -12,6 +12,7 @@ Everything here is pure: no I/O, no curses, no time.sleep. The TUI passes
 
 from __future__ import annotations
 
+import os
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -107,26 +108,46 @@ def _now(now: Optional[datetime]) -> datetime:
 # be cleaned with `claude-radar --reset`.
 
 
+# Should East-Asian "Ambiguous" code points (○, △, ▶, …, etc.) count as
+# 1 or 2 cells? Most modern terminals (macOS Terminal, Ghostty, iTerm2,
+# alacritty, kitty) render them as 1 cell by default. CJK-locale users
+# running Terminal.app in zh_CN, or iTerm2 with "Treat ambiguous-width
+# characters as double-width" enabled, see them as 2 cells.
+#
+# Wrong guess in either direction breaks the layout: too narrow and the
+# chrome's dash budget overflows; too wide and chgat alignment slips by
+# one column (the focused-row green session id leaves the first
+# character un-recoloured).
+#
+# Default to 1 (matches the modern majority). Override via the
+# CLAUDE_RADAR_AMBIGUOUS_WIDTH env var (`1` or `2`).
+def _ambiguous_cell_width() -> int:
+    raw = os.environ.get("CLAUDE_RADAR_AMBIGUOUS_WIDTH", "1").strip()
+    return 2 if raw == "2" else 1
+
+
+_AMBIGUOUS_WIDTH = _ambiguous_cell_width()
+
+
 def _char_width(ch: str) -> int:
     """Visual cell width of a single character.
 
-    Combining marks → 0. East-Asian Wide / Full → 2. Ambiguous
-    (``○``, ``△`` etc.) → 2 because most CJK-locale terminals render
-    them that way and a slightly-loose layout in non-CJK terminals beats
-    an overflowing chrome in CJK ones. Everything else → 1.
-
-    Special case: box-drawing characters (U+2500–U+257F) are technically
-    Ambiguous, but every terminal in practice renders them as 1 cell to
-    support ASCII / box-drawing TUIs. Counting them as 2 cells would
-    quadruple the dashes in our chrome and make the layout impossible.
+    Combining marks → 0. East-Asian Wide / Full → 2. Ambiguous → see
+    ``_ambiguous_cell_width``. Everything else → 1. Box-drawing
+    characters (U+2500–U+257F) are technically Ambiguous but every
+    terminal renders them as 1 cell to support ASCII / box-drawing
+    TUIs, so we hard-code 1.
     """
     if unicodedata.combining(ch):
         return 0
     cp = ord(ch)
     if 0x2500 <= cp <= 0x257F:
         return 1
-    if unicodedata.east_asian_width(ch) in ("W", "F", "A"):
+    eaw = unicodedata.east_asian_width(ch)
+    if eaw in ("W", "F"):
         return 2
+    if eaw == "A":
+        return _AMBIGUOUS_WIDTH
     return 1
 
 

@@ -149,7 +149,10 @@ def _draw(
     _safe_addstr(stdscr, 2, 0, rows[2], chrome_attr | curses.A_DIM)
     focused = _focused_tmux_session()
     name_width, _ = render.board_column_widths(width)
-    name_col_start = 5  # cursor(1) + emoji(2) + gap(2) — see render._board_view_lines
+    # cursor(1) + emoji_slot(2) + gap(2) — _board_view_lines pads the
+    # emoji to display-width 2 regardless of whether it's W or A, so the
+    # session_id always starts at display col 5.
+    name_col_start = 5
     body_start = layout.body_start
     body_rows = rows[body_start : -1]
     prev_owner: Optional[int] = None
