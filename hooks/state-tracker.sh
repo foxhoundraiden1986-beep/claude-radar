@@ -140,6 +140,14 @@ _ROLE_RX = (
     re.compile(r"^you are\s+(?:a|an|the)\s+[^.,!\n]+?[.,!\n]", re.IGNORECASE),
     re.compile(r"^你是(?:一个|一名|一位)?\s*[^。，！\n]+?[。，！\n]"),
 )
+# System-injected prompts arrive wrapped in XML-style tags:
+#   <scheduled-task name="..." file="...">...   (launchd / cron-driven runs)
+#   <task-notification>...<task-id>...           (intra-agent notifications)
+#   <system-reminder>...                         (harness-level reminders)
+# Real user prompts almost never open with a hyphenated XML tag, so this is
+# a safe heuristic. We deliberately allow single-word tags like <div> so a
+# user pasting an HTML question doesn't get filtered.
+_SYSTEM_TAG_RX = re.compile(r"^<[a-z]+(?:-[a-z]+)+[\s>]", re.IGNORECASE)
 # Imperative openers ("Review the X", "Your task is to ...") collide with
 # real user messages ("Review the code", "Summarize this article"). Only
 # treat them as sub-agent when the prompt is long enough to be boilerplate.
@@ -161,6 +169,8 @@ _HARD_LENGTH_LIMIT = 1500
 # string and aborts the *entire* hook — including the status flip — so
 # sub-agent runs don't bounce the main session between working / waiting.
 _SKIP = "__RADAR_SKIP__"
+if _SYSTEM_TAG_RX.match(val):
+    print(_SKIP); sys.exit(0)
 if any(rx.match(val) for rx in _ROLE_RX):
     print(_SKIP); sys.exit(0)
 if len(val) > _HARD_LENGTH_LIMIT:
