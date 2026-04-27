@@ -107,43 +107,55 @@ def _now(now: Optional[datetime]) -> datetime:
 # be cleaned with `claude-radar --reset`.
 
 
-def _display_width(s: str) -> int:
-    """Return the visual width of ``s`` in terminal cells.
+def _char_width(ch: str) -> int:
+    """Visual cell width of a single character.
 
-    East-Asian wide and full-width characters count as 2; combining marks
-    count as 0; everything else as 1. This is a deliberately small subset of
-    ``wcwidth``; it is good enough for the board and keeps us stdlib-only.
+    Combining marks → 0. East-Asian Wide / Full → 2. Ambiguous
+    (``○``, ``△`` etc.) → 2 because most CJK-locale terminals render
+    them that way and a slightly-loose layout in non-CJK terminals beats
+    an overflowing chrome in CJK ones. Everything else → 1.
+
+    Special case: box-drawing characters (U+2500–U+257F) are technically
+    Ambiguous, but every terminal in practice renders them as 1 cell to
+    support ASCII / box-drawing TUIs. Counting them as 2 cells would
+    quadruple the dashes in our chrome and make the layout impossible.
     """
-    width = 0
-    for ch in s:
-        if unicodedata.combining(ch):
-            continue
-        if unicodedata.east_asian_width(ch) in ("W", "F"):
-            width += 2
-        else:
-            width += 1
-    return width
+    if unicodedata.combining(ch):
+        return 0
+    cp = ord(ch)
+    if 0x2500 <= cp <= 0x257F:
+        return 1
+    if unicodedata.east_asian_width(ch) in ("W", "F", "A"):
+        return 2
+    return 1
+
+
+def _display_width(s: str) -> int:
+    """Return the visual width of ``s`` in terminal cells."""
+    return sum(_char_width(ch) for ch in s)
 
 
 def truncate_display(s: str, max_width: int) -> str:
     """Truncate ``s`` so that its display width fits in ``max_width`` cells.
 
-    A single-cell ellipsis (``…``) replaces the trimmed tail. If
-    ``max_width <= 0`` returns an empty string.
+    An ellipsis (``…``) replaces the trimmed tail. ``…`` is East-Asian
+    Ambiguous so it occupies 2 cells under our shared width model — the
+    truncation reserves that many cells. If ``max_width`` is too small
+    for an ellipsis at all, just return ``"…"`` (which itself takes
+    whatever cells the terminal wants).
     """
     if max_width <= 0:
         return ""
     if _display_width(s) <= max_width:
         return s
-    if max_width == 1:
+    ellipsis_w = _char_width("…")
+    if max_width <= ellipsis_w:
         return "…"
     out: List[str] = []
     used = 0
     for ch in s:
-        w = 0 if unicodedata.combining(ch) else (
-            2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
-        )
-        if used + w > max_width - 1:  # leave room for the ellipsis
+        w = _char_width(ch)
+        if used + w > max_width - ellipsis_w:
             break
         out.append(ch)
         used += w
@@ -389,13 +401,7 @@ def _wrap_to_width(text: str, width: int) -> List[str]:
     cur = ""
     cur_w = 0
     for ch in text:
-        cat = unicodedata.category(ch)
-        if cat.startswith("M"):
-            cw = 0
-        elif unicodedata.east_asian_width(ch) in ("W", "F", "A"):
-            cw = 2
-        else:
-            cw = 1
+        cw = _char_width(ch)
         if cur_w + cw > width:
             out.append(cur)
             cur = ch
