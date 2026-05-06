@@ -9,6 +9,7 @@ drawing and key bindings.
 Key bindings:
     q, Q, Esc      quit
     r, R           refresh immediately
+    Ctrl+L         force a full-screen redraw (use if chrome looks corrupted)
     ↑/k, ↓/j       move selection
     ⏎ / Enter      jump to selected tmux session (switch-client / attach hint)
     i, I           mute (toggle): render selected session as idle until its
@@ -131,14 +132,11 @@ def _draw(
 ) -> List["render.SessionView"]:
     global _last_size
     height, width = stdscr.getmaxyx()
-    # Detect missed resize events (some terminals don't emit KEY_RESIZE
-    # reliably). On any size change, do a full clear + repaint so stale
-    # cells from the previous viewport don't leak through.
-    if (height, width) != _last_size:
-        stdscr.clear()
-        _last_size = (height, width)
-    else:
-        stdscr.erase()
+    # Always full-clear: erase() leaves wide-char emoji residue in the
+    # chrome row when count groups change width between frames (e.g.
+    # "⚡3 ○5" → "💬1 ⚡2 ○5"), producing the "⚡— ⚡3" ghost.
+    stdscr.clear()
+    _last_size = (height, width)
     raw_states = state.list_states()
     now = datetime.now(timezone.utc).astimezone()
     layout = render.render_board_layout(
@@ -354,6 +352,9 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
             return
         if ch in (ord("r"), ord("R")):
             continue  # falls through to redraw
+        if ch == 12:  # Ctrl+L — force a full repaint when chrome looks stale
+            stdscr.clear()
+            continue
         if ch in (curses.KEY_UP, ord("k")):
             if n:
                 selected_index = (selected_index - 1) % n
