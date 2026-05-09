@@ -129,7 +129,15 @@ def _draw(
     *,
     status_msg: str = "",
     selected_index: int = 0,
-) -> List["render.SessionView"]:
+    viewport_top: int = 0,
+) -> Tuple[List["render.SessionView"], int]:
+    """Draw a frame and return (views, adjusted viewport_top).
+
+    The viewport scrolls when the selection has moved outside the visible
+    window. Adjusting in-draw means the caller can keep its own viewport
+    state but never has to know exact terminal geometry — render decides
+    what fits, draw consumes that decision.
+    """
     global _last_size
     height, width = stdscr.getmaxyx()
     # Always full-clear: erase() leaves wide-char emoji residue in the
@@ -139,11 +147,31 @@ def _draw(
     _last_size = (height, width)
     raw_states = state.list_states()
     now = datetime.now(timezone.utc).astimezone()
-    layout = render.render_board_layout(
-        raw_states, width=width, height=height, now=now
-    )
-    rows = layout.rows
     views = render.derive_views(raw_states, now=now)
+    # Snap the viewport so the selected view is in the rendered window.
+    # If selection went above viewport_top, scroll up immediately. If it
+    # went below the bottom truncation, scroll down by re-rendering until
+    # it fits — bounded by len(views) so worst-case is O(n) renders, fine
+    # for a 2 s refresh loop.
+    if views:
+        viewport_top = max(0, min(viewport_top, len(views) - 1))
+        if selected_index < viewport_top:
+            viewport_top = selected_index
+    layout = render.render_board_layout(
+        raw_states, width=width, height=height, now=now, viewport_top=viewport_top
+    )
+    if views:
+        guard = 0
+        while guard < len(views):
+            visible = [o for o in layout.body_owners if o is not None]
+            if not visible or selected_index <= visible[-1] or viewport_top >= len(views) - 1:
+                break
+            viewport_top += 1
+            layout = render.render_board_layout(
+                raw_states, width=width, height=height, now=now, viewport_top=viewport_top
+            )
+            guard += 1
+    rows = layout.rows
 
     # rows[0]=chrome, rows[1]=column header, rows[2]=separator, body, footer.
     chrome_attr = (
@@ -204,7 +232,7 @@ def _draw(
         # Overlay status message on the footer line.
         _safe_addstr(stdscr, height - 1, 0, status_msg.ljust(width)[:width], curses.A_REVERSE)
     stdscr.refresh()
-    return views
+    return views, viewport_top
 
 
 def _tmux_switch(target: str, *, client: Optional[str] = None) -> str:
@@ -337,14 +365,21 @@ def _loop(stdscr: "curses._CursesWindow", refresh_seconds: float) -> None:
 
     status_msg = ""
     selected_index = 0
+    viewport_top = 0
     timeout_ms = int(refresh_seconds * 1000)
     while True:
-        views = _draw(stdscr, status_msg=status_msg, selected_index=selected_index)
+        views, viewport_top = _draw(
+            stdscr,
+            status_msg=status_msg,
+            selected_index=selected_index,
+            viewport_top=viewport_top,
+        )
         status_msg = ""
         # Clamp selection in case sessions appeared / disappeared since last tick.
         n = len(views)
         if n == 0:
             selected_index = 0
+            viewport_top = 0
         else:
             selected_index = max(0, min(selected_index, n - 1))
         ch = _read_key(stdscr, timeout_ms)

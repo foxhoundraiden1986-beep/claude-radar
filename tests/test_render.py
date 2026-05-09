@@ -389,6 +389,61 @@ class TestRenderBoard(unittest.TestCase):
         lines = render.render_board(states, width=20, height=6, now=self.now)
         self._assert_dimensions(lines, width=20, height=6)
 
+    def test_idle_session_keeps_task_and_age(self) -> None:
+        # Idle rows used to blank out the task to "-" and hide the age,
+        # which made it impossible to tell at a glance which session had
+        # been working on what before going quiet. Now the row preserves
+        # the last task and age — only the ○ glyph and dim color mark it
+        # as inactive.
+        states = [
+            _state("data-task", "idle", task="拉日活漏斗", minutes_ago=45, now=self.now),
+        ]
+        lines = render.render_board(states, width=80, height=10, now=self.now)
+        joined = "\n".join(lines)
+        self.assertIn("data-task", joined)
+        self.assertIn("拉日活漏斗", joined)
+        self.assertIn("45m", joined)
+
+    def test_viewport_top_scrolls_past_truncation(self) -> None:
+        # 20 sessions, height 8 — without scrolling only the top few fit
+        # and the rest become "+N more". Setting viewport_top should
+        # reveal lower-indexed sessions that were previously hidden.
+        states = [
+            _state(f"s{i:02d}", "waiting", task=f"task{i}", minutes_ago=i + 1, now=self.now)
+            for i in range(20)
+        ]
+        # Default viewport: lower-indexed sessions visible, last hidden
+        layout0 = render.render_board_layout(
+            states, width=60, height=8, now=self.now, viewport_top=0
+        )
+        owners0 = [o for o in layout0.body_owners if o is not None]
+        self.assertEqual(min(owners0), 0)
+        # Scroll down so the previously-hidden tail becomes visible
+        layout5 = render.render_board_layout(
+            states, width=60, height=8, now=self.now, viewport_top=5
+        )
+        owners5 = [o for o in layout5.body_owners if o is not None]
+        self.assertGreaterEqual(min(owners5), 5)
+        joined5 = "\n".join(layout5.rows)
+        # Header indicating sessions hidden above the viewport
+        self.assertIn("earlier", joined5)
+        # Owners are returned as full-list indices (not slice indices),
+        # so the TUI can compare directly against selected_index.
+        self.assertTrue(all(o >= 5 for o in owners5))
+
+    def test_viewport_top_clamped_to_valid_range(self) -> None:
+        states = [
+            _state(f"s{i}", "working", task="t", minutes_ago=i + 1, now=self.now)
+            for i in range(3)
+        ]
+        # Out-of-range viewport_top must not raise; clamps to last index.
+        layout = render.render_board_layout(
+            states, width=60, height=10, now=self.now, viewport_top=99
+        )
+        owners = [o for o in layout.body_owners if o is not None]
+        self.assertTrue(owners, "viewport_top out of range should still render something")
+        self.assertLessEqual(max(owners), 2)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -474,13 +474,12 @@ def _board_view_lines(view: SessionView, name_width: int, task_width: int) -> Li
     """
     emoji = _emoji_cell(view.status)
     name = pad_display(truncate_display(view.session_id, name_width), name_width)
-    if view.status == STATUS_IDLE:
-        chunks = ["-"]
-        age = ""
-    else:
-        text = (view.task or "").strip() or "-"
-        chunks = _wrap_to_width(text, task_width)
-        age = format_duration(view.age_seconds)
+    # Idle rows keep their last task + age so the user can see what was
+    # in progress. The status emoji (○) and dim color are enough to mark
+    # them as inactive without erasing context.
+    text = (view.task or "").strip() or "-"
+    chunks = _wrap_to_width(text, task_width)
+    age = format_duration(view.age_seconds) if view.age_seconds else ""
     blank_emoji = pad_display("", 2)
     blank_name = pad_display("", name_width)
     blank_age = pad_display("", 6)
@@ -513,8 +512,16 @@ def render_board_layout(
     now: Optional[datetime] = None,
     idle_after_seconds: int = DEFAULT_IDLE_AFTER_SECONDS,
     title: str = "Claude Sessions",
+    viewport_top: int = 0,
 ) -> BoardLayout:
     """Render the board and return rows + body→view mapping.
+
+    ``viewport_top`` is the index into the sorted view list for the first
+    visible row. It lets the TUI scroll past the bottom truncation point
+    when the user navigates beyond what fits on screen. Body owner indices
+    in the returned layout are always relative to the *full* view list,
+    not the visible slice — callers can compare against ``selected_index``
+    without offset arithmetic.
 
     See :func:`render_board` for the simpler wrapper that drops the metadata.
     """
@@ -523,6 +530,7 @@ def render_board_layout(
 
     now = _now(now)
     views = derive_views(raw_states, now=now, idle_after_seconds=idle_after_seconds)
+    viewport_top = max(0, min(int(viewport_top), max(0, len(views) - 1)))
 
     # Header layout (with status counts when there are sessions):
     #   ╭─ <title> ──── 💬N ⚡N ○N ──── HH:MM ─╮
@@ -589,19 +597,30 @@ def render_board_layout(
         max_body = max(1, height - 4)
         body_buf: List[str] = []
         owners_buf: List[Optional[int]] = []
+
+        # If we've scrolled past the top of the list, leave a hint row so
+        # the user can tell there are more sessions above. The hint owns
+        # no view (None) so ↑/↓ skip it cleanly.
+        if viewport_top > 0:
+            body_buf.append(pad_display(f"… +{viewport_top} earlier", width))
+            owners_buf.append(None)
+
+        visible = views[viewport_top:]
         truncated_at = -1
-        for i, v in enumerate(views):
+        for i, v in enumerate(visible):
             v_lines = _board_view_lines(v, name_width, task_width)
             # Reserve 1 row for the "+N more" trailer if we'll truncate.
-            cap = max_body - 1 if i < len(views) - 1 else max_body
+            cap = max_body - 1 if i < len(visible) - 1 else max_body
             if len(body_buf) + len(v_lines) > cap:
                 truncated_at = i
                 break
             for ln in v_lines:
                 body_buf.append(pad_display(truncate_display(ln, width), width))
-                owners_buf.append(i)
+                # Body owner uses the full-list index, not the slice index,
+                # so the TUI can compare directly to selected_index.
+                owners_buf.append(viewport_top + i)
         if truncated_at >= 0:
-            remaining = len(views) - truncated_at
+            remaining = len(visible) - truncated_at
             body_buf.append(pad_display(f"… +{remaining} more", width))
             owners_buf.append(None)
         rows.extend(body_buf)
@@ -627,6 +646,7 @@ def render_board(
     now: Optional[datetime] = None,
     idle_after_seconds: int = DEFAULT_IDLE_AFTER_SECONDS,
     title: str = "Claude Sessions",
+    viewport_top: int = 0,
 ) -> List[str]:
     """Return board rows sized to the given window. See :func:`render_board_layout`."""
     return render_board_layout(
@@ -636,6 +656,7 @@ def render_board(
         now=now,
         idle_after_seconds=idle_after_seconds,
         title=title,
+        viewport_top=viewport_top,
     ).rows
 
 
