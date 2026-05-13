@@ -94,11 +94,23 @@ if [ -z "$SESSION_ID" ] && [ -n "${PPID:-}" ]; then
     fi
 fi
 
+USED_PID_FALLBACK=0
 if [ -z "$SESSION_ID" ]; then
     # Last-resort stable id: $PPID is Claude Code's PID, which lives as
     # long as the session does, so all hooks of that session land in one
     # file. Critically, NOT $$ — that is per-invocation.
     SESSION_ID="pid-${PPID:-0}"
+    USED_PID_FALLBACK=1
+fi
+
+# Background agents (`claude --bg`, agent view) have no controlling tty
+# and no tmux, so the pid-* fallback is the only id we can derive. These
+# clutter the dashboard with anonymous rows whose task text is whatever
+# the user typed into agent view — better to let `claude agents`'
+# native TUI track them. Opt-in via CLAUDE_RADAR_INCLUDE_BG=1 if you
+# do want them on the radar.
+if [ "$USED_PID_FALLBACK" = "1" ] && [ -z "${CLAUDE_RADAR_INCLUDE_BG:-}" ]; then
+    exit 0
 fi
 
 TMUX_SESSION="${SESSION_ID}"
